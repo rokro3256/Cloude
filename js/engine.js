@@ -128,6 +128,7 @@
       this.ctx = canvas.getContext('2d');
       this.onEnd = opts.onEnd || (() => {});
       this.onFrame = opts.onFrame || null;
+      this.onSound = opts.onSound || null; // (이름, 전투시간(초), {세기 등}) 효과음 신호
       this.speedMult = 1;
       this.paused = false;
       this.time = 0;
@@ -191,6 +192,12 @@
       this._raf = null;
     }
 
+    /* ---------- 효과음 ---------- */
+    // 소리를 직접 내지 않고 신호만 보냄. 소리는 js/sfx.js가 냄
+    sound(name, o) {
+      if (this.onSound) this.onSound(name, this.time, o || {});
+    }
+
     /* ---------- 스킬에서 쓰는 API ---------- */
     living() { return this.balls.filter((b) => b.alive); }
     enemiesOf(b) { return this.balls.filter((o) => o.alive && o.team !== b.team); }
@@ -230,6 +237,7 @@
         if (st.shield.amount <= 0) delete st.shield;
         if (absorbed > 0 && amt <= 0) {
           this.text(target.x, target.y - target.r - 10, '막음', '#7fe3ff', 14);
+          this.sound('block');
           return 0;
         }
       }
@@ -277,6 +285,7 @@
       }
       const speed = o.speed || 400;
       const r = o.radius || 7;
+      if (!o.silent) this.sound(o.sound || 'shoot');
       const p = {
         x: owner.x + Math.cos(angle) * (owner.r + r + 2),
         y: owner.y + Math.sin(angle) * (owner.r + r + 2),
@@ -299,6 +308,7 @@
     explode(x, y, radius, damage, owner, o = {}) {
       this.ring(x, y, radius, o.color || '#ffb347');
       this.particles(x, y, o.color || '#ffb347', 18, 300);
+      this.sound('boom', { size: radius / 120 });
       this.shake(Math.min(10, radius / 15));
       const hits = owner ? this.enemiesInRadius(owner, x, y, radius)
         : this.living().filter((b) => Math.hypot(b.x - x, b.y - y) <= radius + b.r);
@@ -371,6 +381,7 @@
       sk.lastCast = this.time;
       sk.casts = (sk.casts || 0) + 1;
       if (!sk.def.silent) {
+        this.sound(sk.def.sound || 'cast');
         this.announce(b, (sk.def.name || '스킬') + '!', sk.def.color);
         this.castLog.push({ t: this.time, ball: b, name: sk.def.name || '스킬', color: sk.def.color });
         if (this.castLog.length > 50) this.castLog.shift();
@@ -405,6 +416,7 @@
       this.ring(b.x, b.y, b.r * 3, b.color, 0.6);
       this.shake(12);
       this.text(b.x, b.y, '탈락!', '#ff5d5d', 22, 1.2, true);
+      this.sound('death');
       if (source && source !== b && source.alive) {
         source.stats.kills++;
         this.fire(source, 'onKill', { target: b });
@@ -423,6 +435,7 @@
         const m = 1 + lv * 0.5;
         if (!this.suddenDeath || m !== this.globalMult) {
           this.banner = { str: `서든데스! 피해 x${m}`, life: 2, max: 2 };
+          this.sound('alarm');
         }
         this.suddenDeath = true;
         this.globalMult = m;
@@ -550,6 +563,7 @@
               a.hitTimers.set('clash' + balls.indexOf(b), 0.2);
               const mx = (sa[2] + sb[2]) / 2, my = (sa[3] + sb[3]) / 2;
               this.particles(mx, my, '#fff4c2', 8, 260);
+              this.sound('clash');
               continue;
             }
           }
@@ -562,6 +576,7 @@
             b.kx += ((b.x - a.x) / d) * a.weapon.knockback;
             b.ky += ((b.y - a.y) / d) * a.weapon.knockback;
             if (a.weapon.reverseOnHit) a.spinDir *= -1;
+            this.sound('hit', { dmg });
             this.damage(b, dmg, a, { kind: 'weapon' });
             if (a.weapon.onHit && b.alive) a.weapon.onHit(b, a, this);
             this.shake(Math.min(6, dmg / 3));
@@ -601,6 +616,7 @@
               const s = b.weaponSeg();
               if (segPointDist(s[0], s[1], s[2], s[3], p.x, p.y) < p.r + b.weapon.width / 2) {
                 this.particles(p.x, p.y, '#fff4c2', 6, 200);
+                this.sound('parry');
                 dead = true;
                 break;
               }
@@ -608,6 +624,7 @@
             if (p.hit.has(b)) continue;
             if (Math.hypot(b.x - p.x, b.y - p.y) < b.r + p.r) {
               p.hit.add(b);
+              this.sound('phit', { dmg: p.damage });
               this.damage(b, p.damage, p.owner, { kind: 'projectile' });
               const kb = 120;
               b.kx += (p.vx / p.speed) * kb; b.ky += (p.vy / p.speed) * kb;
@@ -675,6 +692,7 @@
       const d = a.status.dashing;
       if (!d || d.hit.has(b)) return;
       d.hit.add(b);
+      this.sound('hit', { dmg: d.damage + 4 });
       this.damage(b, d.damage, a, { kind: 'weapon' });
       b.kx += nx * 420; b.ky += ny * 420;
       this.shake(6);

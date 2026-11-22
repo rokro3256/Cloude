@@ -33,6 +33,7 @@
     <button id="btnBack" class="btn icon" type="button" aria-label="캐릭터 선택으로">←</button>
     <button id="btnRestart" class="btn icon" type="button" aria-label="다시 하기">↻</button>
     <div id="clock" class="clock">0.0</div>
+    <button id="btnSound" class="btn icon" type="button" aria-label="효과음 끄기" aria-pressed="true">🔊</button>
     <button id="btnSpeed" class="btn" type="button" aria-label="속도">1x</button>
     <button id="btnPause" class="btn icon" type="button" aria-label="일시정지">❚❚</button>
   </div>
@@ -52,7 +53,7 @@
 <section id="recSave" class="overlay recsave" hidden>
   <div class="result">
     <div class="eyebrow">녹화 완료</div>
-    <video id="recVideo" playsinline muted loop controls></video>
+    <video id="recVideo" playsinline loop controls></video>
     <p id="recInfo" class="recinfo"></p>
     <div class="row">
       <button id="btnRecSave" class="btn primary" type="button">영상 저장</button>
@@ -87,6 +88,7 @@
 <script src="js/engine.js"></script>
 <script src="js/skills.js"></script>
 <script src="js/characters.js"></script>
+<script src="js/sfx.js"></script>
 <script src="js/video-core.js"></script>
 <script src="js/recorder.js"></script>
 <script src="js/ui.js"></script>

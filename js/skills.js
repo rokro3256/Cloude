@@ -10,6 +10,7 @@
  *   chance: 1,                 // 발동 확률(0~1, 생략하면 항상)
  *   hpBelow: 0.3,              // trigger가 'lowHp'일 때 체력 비율 기준
  *   silent: false,             // true면 발동 이름을 띄우지 않음
+ *   sound: 'cast',             // 발동 효과음 (js/sfx.js의 이름: cast heal shield zap freeze dash teleport rage revive warn crit boom ...)
  *   cast(self, game, ctx) {}   // 실제 효과. false를 반환하면 "발동 안 함"
  * }
  *
@@ -59,7 +60,7 @@
           const t = game.nearestEnemy(self);
           if (!t) return false;
           game.shoot(self, {
-            target: t, speed: p.speed, damage: p.damage, radius: p.radius, color: p.color,
+            target: t, speed: p.speed, damage: p.damage, radius: p.radius, color: p.color, sound: 'fire',
             onHit: (tg) => { if (p.burn) game.addStatus(tg, 'burn', { time: 3, dps: p.burn, source: self }); },
           });
         },
@@ -77,7 +78,7 @@
           const base = Math.atan2(t.y - self.y, t.x - self.x);
           for (let i = 0; i < p.count; i++) {
             const a = base + (p.count === 1 ? 0 : (i / (p.count - 1) - 0.5) * p.spread * 2);
-            game.shoot(self, { angle: a, speed: p.speed, damage: p.damage, radius: 5, color: '#f1e3b0', shape: 'arrow' });
+            game.shoot(self, { angle: a, speed: p.speed, damage: p.damage, radius: 5, color: '#f1e3b0', shape: 'arrow', sound: i === 0 ? 'arrow' : null, silent: i > 0 });
           }
         },
       };
@@ -91,7 +92,7 @@
         cast(self, game) {
           const off = Math.random() * TAU;
           for (let i = 0; i < p.count; i++) {
-            game.shoot(self, { angle: off + (i / p.count) * TAU, speed: p.speed, damage: p.damage, radius: 6, color: p.color });
+            game.shoot(self, { angle: off + (i / p.count) * TAU, speed: p.speed, damage: p.damage, radius: 6, color: p.color, silent: i > 0 });
           }
         },
       };
@@ -105,7 +106,7 @@
         cast(self, game) {
           if (!game.nearestEnemy(self)) return false;
           for (let i = 0; i < p.count; i++) {
-            game.shoot(self, { angle: Math.random() * TAU, speed: p.speed, damage: p.damage, radius: 6, color: p.color, homing: p.turn, life: 4 });
+            game.shoot(self, { angle: Math.random() * TAU, speed: p.speed, damage: p.damage, radius: 6, color: p.color, homing: p.turn, life: 4, silent: i > 0 });
           }
         },
       };
@@ -114,7 +115,7 @@
     lightning(o) {
       const p = P({ name: '체인 라이트닝', damage: 10, chains: 3, range: 260, cooldown: 5, stun: 0 }, o);
       return {
-        name: p.name, color: '#bfe6ff', trigger: 'cooldown', cooldown: p.cooldown,
+        name: p.name, color: '#bfe6ff', sound: 'zap', trigger: 'cooldown', cooldown: p.cooldown,
         desc: `${p.cooldown}초마다 번개가 적 최대 ${p.chains}명에게 연쇄 (피해 ${p.damage})`,
         cast(self, game) {
           let from = self;
@@ -143,7 +144,7 @@
     meteor(o) {
       const p = P({ name: '메테오', damage: 25, radius: 90, delay: 1.1, cooldown: 9 }, o);
       return {
-        name: p.name, color: '#ff8a5c', trigger: 'cooldown', cooldown: p.cooldown,
+        name: p.name, color: '#ff8a5c', sound: 'warn', trigger: 'cooldown', cooldown: p.cooldown,
         desc: `${p.cooldown}초마다 적 위치에 운석 낙하 (${p.delay}초 뒤, 피해 ${p.damage})`,
         cast(self, game) {
           const t = game.randomEnemy(self);
@@ -172,7 +173,7 @@
     freeze(o) {
       const p = P({ name: '빙결', radius: 150, duration: 1.4, damage: 4, cooldown: 8 }, o);
       return {
-        name: p.name, color: '#9fe7ff', trigger: 'cooldown', cooldown: p.cooldown,
+        name: p.name, color: '#9fe7ff', sound: 'freeze', trigger: 'cooldown', cooldown: p.cooldown,
         desc: `${p.cooldown}초마다 주변 적을 ${p.duration}초 얼림`,
         cast(self, game) {
           const ts = game.enemiesInRadius(self, self.x, self.y, p.radius);
@@ -203,7 +204,7 @@
     dash(o) {
       const p = P({ name: '돌진', power: 950, damage: 10, cooldown: 4 }, o);
       return {
-        name: p.name, trigger: 'cooldown', cooldown: p.cooldown,
+        name: p.name, sound: 'dash', trigger: 'cooldown', cooldown: p.cooldown,
         desc: `${p.cooldown}초마다 적에게 돌진 (부딪히면 ${p.damage})`,
         cast(self, game) {
           const t = game.nearestEnemy(self);
@@ -219,7 +220,7 @@
     teleport(o) {
       const p = P({ name: '순간이동', cooldown: 6, damage: 0 }, o);
       return {
-        name: p.name, color: '#d9a8ff', trigger: 'cooldown', cooldown: p.cooldown,
+        name: p.name, color: '#d9a8ff', sound: 'teleport', trigger: 'cooldown', cooldown: p.cooldown,
         desc: `${p.cooldown}초마다 적의 등 뒤로 순간이동${p.damage ? ` (피해 ${p.damage})` : ''}`,
         cast(self, game) {
           const t = game.nearestEnemy(self);
@@ -238,7 +239,7 @@
     haste(o) {
       const p = P({ name: '가속', mult: 1.7, duration: 3, cooldown: 7 }, o);
       return {
-        name: p.name, color: '#7dfcff', trigger: 'cooldown', cooldown: p.cooldown,
+        name: p.name, color: '#7dfcff', sound: 'dash', trigger: 'cooldown', cooldown: p.cooldown,
         desc: `${p.cooldown}초마다 ${p.duration}초간 이동속도 x${p.mult}`,
         cast(self, game) { game.addStatus(self, 'haste', { time: p.duration, mult: p.mult }); },
       };
@@ -248,7 +249,7 @@
     heal(o) {
       const p = P({ name: '치유', amount: 20, cooldown: 8 }, o);
       return {
-        name: p.name, color: '#6dff9c', trigger: 'cooldown', cooldown: p.cooldown,
+        name: p.name, color: '#6dff9c', sound: 'heal', trigger: 'cooldown', cooldown: p.cooldown,
         desc: `${p.cooldown}초마다 체력 ${p.amount} 회복`,
         cast(self, game) {
           if (self.hp > self.maxHp * 0.85) return false; // 다쳤을 때만
@@ -261,7 +262,7 @@
     shield(o) {
       const p = P({ name: '보호막', amount: 25, duration: 4, cooldown: 9 }, o);
       return {
-        name: p.name, color: '#7fe3ff', trigger: 'cooldown', cooldown: p.cooldown,
+        name: p.name, color: '#7fe3ff', sound: 'shield', trigger: 'cooldown', cooldown: p.cooldown,
         desc: `${p.cooldown}초마다 ${p.duration}초간 피해 ${p.amount} 흡수`,
         cast(self, game) { game.addStatus(self, 'shield', { amount: p.amount, time: p.duration }); },
       };
@@ -312,7 +313,7 @@
     critical(o) {
       const p = P({ chance: 0.2, mult: 2 }, o);
       return {
-        name: '치명타', color: '#ff4d4d', trigger: 'onHit', chance: p.chance,
+        name: '치명타', color: '#ff4d4d', sound: 'crit', trigger: 'onHit', chance: p.chance,
         desc: `적중 시 ${Math.round(p.chance * 100)}% 확률로 추가 피해 (x${p.mult})`,
         cast(self, game, ctx) {
           if (ctx.kind === 'skill') return false;
@@ -336,7 +337,7 @@
     berserk(o) {
       const p = P({ name: '광폭화', hpBelow: 0.35, duration: 8, damageMult: 1.6, speedMult: 1.4 }, o);
       return {
-        name: p.name, color: '#ff5a5a', trigger: 'lowHp', hpBelow: p.hpBelow,
+        name: p.name, color: '#ff5a5a', sound: 'rage', trigger: 'lowHp', hpBelow: p.hpBelow,
         desc: `체력 ${Math.round(p.hpBelow * 100)}% 이하에서 ${p.duration}초간 피해 x${p.damageMult}, 속도 x${p.speedMult}`,
         cast(self, game) {
           game.addStatus(self, 'power', { time: p.duration, mult: p.damageMult });
@@ -349,7 +350,7 @@
     revive(o) {
       const p = P({ name: '부활', hpRatio: 0.4 }, o);
       return {
-        name: p.name, color: '#ffe38a', trigger: 'onDeath',
+        name: p.name, color: '#ffe38a', sound: 'revive', trigger: 'onDeath',
         desc: `처음 쓰러질 때 체력 ${Math.round(p.hpRatio * 100)}%로 부활`,
         cast(self, game) {
           self.hp = self.maxHp * p.hpRatio;
@@ -363,7 +364,7 @@
     bloodlust(o) {
       const p = P({ heal: 25, damage: 3 }, o);
       return {
-        name: '피의 갈증', color: '#ff5a5a', trigger: 'onKill',
+        name: '피의 갈증', color: '#ff5a5a', sound: 'rage', trigger: 'onKill',
         desc: `적 처치 시 체력 ${p.heal} 회복, 무기 피해 +${p.damage}`,
         cast(self, game) { game.heal(self, p.heal); self.bonusDamage += p.damage; },
       };

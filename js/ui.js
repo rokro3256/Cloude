@@ -77,6 +77,7 @@
   });
 
   $('btnRecord').addEventListener('click', () => {
+    if (window.SFX) window.SFX.live.unlock(); // 실시간 녹화로 대신할 때 소리를 쓰려면 버튼을 누른 순간에 열어야 함
     if (selected.size < 2) return;
     lastPicks = [...selected].map((i) => chars[i]);
     window.Recorder.start(lastPicks);
@@ -89,11 +90,17 @@
     $('battle').hidden = false;
     $('overlay').hidden = true;
     const canvas = $('canvas');
-    game = new BallBattle.Game(canvas, defs, { onEnd: showResult });
+    const sfx = window.SFX && window.SFX.live;
+    if (sfx) sfx.unlock();
+    game = new BallBattle.Game(canvas, defs, {
+      onEnd: (w, g) => { if (sfx) sfx.play('win'); showResult(w, g); },
+      onSound: (name, t, o) => { if (sfx) sfx.play(name, o); },
+    });
     game.speedMult = SPEEDS[speedIdx];
     buildRoster();
     fit();
     game.start();
+    if (sfx) sfx.play('fight');
     $('btnPause').textContent = '❚❚';
   }
 
@@ -150,6 +157,16 @@
     $('winStats').innerHTML = rows;
     $('overlay').hidden = false;
   }
+
+  $('btnSound').addEventListener('click', () => {
+    const sfx = window.SFX && window.SFX.live;
+    if (!sfx) return;
+    sfx.unlock();
+    sfx.muted = !sfx.muted;
+    $('btnSound').textContent = sfx.muted ? '🔇' : '🔊';
+    $('btnSound').setAttribute('aria-pressed', String(!sfx.muted));
+    $('btnSound').setAttribute('aria-label', sfx.muted ? '효과음 켜기' : '효과음 끄기');
+  });
 
   $('btnPause').addEventListener('click', () => {
     if (!game) return;

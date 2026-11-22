@@ -17,7 +17,7 @@
   const MAX_WORKERS = 6;    // 동시에 영상을 만드는 작업자 수 상한
   const $ = (id) => document.getElementById(id);
 
-  let defs = [], blob = null, ext = 'mp4', job = 0;
+  let defs = [], blob = null, ext = 'mp4', job = 0, noAudio = false;
   let liveRec = null, liveGame = null;
 
   const nextTick = () => new Promise((r) => setTimeout(r, 0));
@@ -53,31 +53,97 @@
     if (myJob !== job) return true;
 
     const seed = (Math.random() * 2 ** 32) >>> 0;
-    const total = C.countFrames(defs, seed);
+    const sim = C.countFrames(defs, seed); // {total, events, endFrame}
+    const total = sim.total;
     const cores = navigator.hardwareConcurrency || 4;
     const k = Math.max(1, Math.min(MAX_WORKERS, cores, Math.ceil(total / (FPS * 2))));
 
-    let result = null;
-    if (workersReady()) {
-      try {
-        result = await encodeWithWorkers(enc, seed, total, k, myJob);
-        if (result === 'mismatch') result = await encodeWithWorkers(enc, seed, total, 1, myJob);
-      } catch (e) {
-        console.warn('[녹화] 작업자 사용 실패, 페이지에서 직접 만듦', e);
-        result = null;
+    // 효과음은 영상과 동시에 따로 만듦
+    const audioP = buildAudio(sim, total / FPS).catch((e) => { console.warn('[녹화] 효과음 실패', e); return null; });
+
+    const encodeAll = async (n) => {
+      if (workersReady()) {
+        try {
+          const r = await encodeWithWorkers(enc, seed, total, n, myJob);
+          if (r) return r;
+        } catch (e) {
+          console.warn('[녹화] 작업자 사용 실패, 페이지에서 직접 만듦', e);
+        }
       }
+      if (myJob !== job) return null;
+      return encodeOnPage(enc, seed, total, Math.min(4, n), myJob);
+    };
+
+    let segChunks = await encodeAll(k);
+    if (!segChunks || myJob !== job) return true;
+    const audio = await audioP;
+    if (myJob !== job) return true;
+    let buf = mux(enc, segChunks, audio);
+    if (buf === 'mismatch') {
+      segChunks = await encodeAll(1);
+      if (!segChunks || myJob !== job) return true;
+      buf = mux(enc, segChunks, audio);
     }
-    if (!result && myJob === job) {
-      result = await encodeOnPage(enc, seed, total, Math.min(4, k), myJob);
-      if (result === 'mismatch') result = await encodeOnPage(enc, seed, total, 1, myJob);
-    }
-    if (!result || result === 'mismatch' || myJob !== job) return true;
+    if (myJob !== job || typeof buf === 'string') return true;
 
     ext = 'mp4';
-    blob = new Blob([result], { type: 'video/mp4' });
+    noAudio = !audio;
+    blob = new Blob([buf], { type: 'video/mp4' });
     setProgress(1);
     showSave();
     return true;
+  }
+
+  /* ----- 효과음 트랙 ----- */
+  const AUDIO_RATE = 48000;
+  const AUDIO_BITRATE = 192000; // 음질 유지를 위해 높게
+
+  async function pickAudioEncoder() {
+    if (!window.AudioEncoder) return null;
+    const base = { sampleRate: AUDIO_RATE, numberOfChannels: 2, bitrate: AUDIO_BITRATE };
+    const tries = [
+      { cfg: Object.assign({ codec: 'mp4a.40.2' }, base), mux: 'aac' },  // AAC: 가장 널리 재생됨
+      { cfg: Object.assign({ codec: 'opus' }, base), mux: 'opus' },
+    ];
+    for (const t of tries) {
+      try { if ((await AudioEncoder.isConfigSupported(t.cfg)).supported) return t; } catch (e) { /* 다음 */ }
+    }
+    return null;
+  }
+
+  async function buildAudio(sim, duration) {
+    const ae = await pickAudioEncoder();
+    if (!ae || !window.SFX) return null;
+    const events = [{ name: 'fight', t: 0, o: {} }].concat(sim.events);
+    events.push({ name: 'win', t: sim.endFrame / FPS + 0.15, o: {} });
+    const buffer = await window.SFX.renderOffline(events, duration, AUDIO_RATE);
+    if (!buffer) return null;
+
+    const chunks = [];
+    let err = null;
+    const encoder = new AudioEncoder({
+      output: (chunk, meta) => chunks.push({ chunk, meta }),
+      error: (e) => { err = e; },
+    });
+    encoder.configure(ae.cfg);
+    const L = buffer.getChannelData(0), R = buffer.getChannelData(1);
+    const block = 4800; // 0.1초씩
+    for (let i = 0; i < buffer.length; i += block) {
+      const n = Math.min(block, buffer.length - i);
+      const data = new Float32Array(n * 2);
+      data.set(L.subarray(i, i + n), 0);
+      data.set(R.subarray(i, i + n), n);
+      const ad = new AudioData({
+        format: 'f32-planar', sampleRate: AUDIO_RATE, numberOfFrames: n, numberOfChannels: 2,
+        timestamp: Math.round((i / AUDIO_RATE) * 1e6), data,
+      });
+      encoder.encode(ad);
+      ad.close();
+    }
+    await encoder.flush();
+    encoder.close();
+    if (err) throw err;
+    return { mux: ae.mux, chunks };
   }
 
   // 영상 화면 안에서 경기장이 들어갈 자리 (출력 픽셀 단위)
@@ -104,17 +170,19 @@
   }
 
   // 구간들을 순서대로 이어 붙여 MP4로 만듦. 구간마다 인코더 설정(SPS/PPS)이 같아야 함
-  function mux(enc, segChunks) {
+  function mux(enc, segChunks, audio) {
     const k0 = decoderDescKey(segChunks[0]);
     if (segChunks.some((c) => decoderDescKey(c) !== k0)) return 'mismatch';
     const target = new Mp4Muxer.ArrayBufferTarget();
     const muxer = new Mp4Muxer.Muxer({
       target,
       video: { codec: enc.mux, width: OW, height: OH, frameRate: FPS },
+      audio: audio ? { codec: audio.mux, numberOfChannels: 2, sampleRate: AUDIO_RATE } : undefined,
       fastStart: 'in-memory',
       firstTimestampBehavior: 'offset',
     });
     for (const list of segChunks) for (const o of list) muxer.addVideoChunk(o.chunk, o.meta);
+    if (audio) for (const o of audio.chunks) muxer.addAudioChunk(o.chunk, o.meta);
     muxer.finalize();
     return target.buffer;
   }
@@ -194,7 +262,7 @@
             w.terminate();
             if (++finished === segs.length) {
               activeWorkers = [];
-              try { resolve(mux(enc, results)); } catch (err) { reject(err); }
+              resolve(results);
             }
           }
         };
@@ -262,7 +330,7 @@
     cleanup();
     for (const s of segs) if (s.err) throw s.err;
     if (myJob !== job) return null;
-    return mux(enc, segs.map((s) => s.out));
+    return segs.map((s) => s.out);
   }
 
   function setProgress(p) {
@@ -287,8 +355,11 @@
     arena.width = ARENA.size; arena.height = ARENA.size;
     let endAt = -1, finishing = false;
     const chunks = [];
+    const sfx = window.SFX && window.SFX.live;
+    const tap = sfx ? sfx.tapStream() : null;
     liveGame = new BallBattle.Game(arena, defs, {
-      onEnd: () => { endAt = performance.now(); },
+      onSound: (name, t, o) => { if (sfx) sfx.play(name, o); },
+      onEnd: () => { endAt = performance.now(); if (sfx) sfx.play('win'); },
       onFrame: (g) => {
         const t = endAt >= 0 ? (performance.now() - endAt) / 1000 : -1;
         C.drawFrame(g, t, $('recCanvas'));
@@ -301,13 +372,16 @@
     liveGame.banner = { str: 'FIGHT!', life: 1.2, max: 1.2 };
     const mime = pickMime();
     const stream = $('recCanvas').captureStream(FPS);
-    const opts = { videoBitsPerSecond: BITRATE };
+    if (tap) tap.stream.getAudioTracks().forEach((t) => stream.addTrack(t));
+    const opts = { videoBitsPerSecond: BITRATE, audioBitsPerSecond: 192000 };
     if (mime) opts.mimeType = mime;
     try { liveRec = new MediaRecorder(stream, opts); } catch (e) { liveRec = new MediaRecorder(stream); }
     const type = liveRec.mimeType || mime || 'video/webm';
     liveRec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
     liveRec.onstop = () => {
       stream.getTracks().forEach((t) => t.stop());
+      if (tap) tap.close();
+      noAudio = !tap;
       if (myJob !== job) return;
       ext = type.includes('mp4') ? 'mp4' : 'webm';
       blob = new Blob(chunks, { type: type.split(';')[0] });
@@ -316,6 +390,7 @@
     C.drawFrame(liveGame, -1, $('recCanvas'));
     liveRec.start(1000);
     liveGame.start();
+    if (sfx) sfx.play('fight');
     return true;
   }
 
@@ -393,8 +468,10 @@
     const v = $('recVideo');
     if (v.src) URL.revokeObjectURL(v.src);
     v.src = URL.createObjectURL(blob);
-    v.play().catch(() => {});
-    $('recInfo').textContent = `${ext.toUpperCase()} · ${(blob.size / 1048576).toFixed(1)}MB`;
+    v.muted = false;
+    v.play().catch(() => { v.muted = true; v.play().catch(() => {}); });
+    $('recInfo').textContent = `${ext.toUpperCase()} · ${(blob.size / 1048576).toFixed(1)}MB · `
+      + (noAudio ? '효과음 없음 (이 브라우저는 소리를 영상에 넣지 못해요)' : '효과음 포함');
     $('recStatus').textContent = '';
     const file = new File([blob], fileName(), { type: blob.type });
     $('btnRecShare').hidden = !(navigator.canShare && navigator.canShare({ files: [file] }));

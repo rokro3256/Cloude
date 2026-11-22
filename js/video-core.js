@@ -320,9 +320,9 @@
 
   /* ---------- 모의 전투 ---------- */
   // view를 주면 canvas(영상 화면)의 경기장 자리에 바로 그림
-  function newGame(defs, rng, canvas, view) {
+  function newGame(defs, rng, canvas, view, onSound) {
     return seeded(rng, () => {
-      const g = new BallBattle.Game(canvas, defs, {});
+      const g = new BallBattle.Game(canvas, defs, { onSound });
       if (view) { g.view = view; g.fastFx = true; g.skipFloor = true; }
       g.balls.forEach((b) => g.fire(b, 'start', {}));
       return g;
@@ -339,12 +339,14 @@
   }
 
   // 1차: 그림 없이 끝까지 계산해서 길이를 알아냄
+  // 1차: 그림 없이 끝까지 계산해서 영상 길이와 효과음 시각을 알아냄
   function countFrames(defs, seed) {
     const rng = mulberry32(seed);
-    const g = newGame(defs, rng, makeCanvas(4, 4));
+    const events = [];
+    const g = newGame(defs, rng, makeCanvas(4, 4), null, (name, t, o) => events.push({ name, t, o }));
     let f = 0;
     while (!g.ended) { stepFrame(g, rng); f++; }
-    return f + OUTRO * FPS + 1; // 영상 전체 프레임 수
+    return { total: f + OUTRO * FPS + 1, endFrame: f, events };
   }
 
 
