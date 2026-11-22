@@ -9,311 +9,18 @@
  * ========================================================= */
 (function () {
   'use strict';
-  const W = 1080, H = 1920;
-  const ARENA = { x: 40, y: 290, size: 1000 };
-  const FPS = 30;
-  const STEP = 1 / 120;
-  const STEPS_PER_FRAME = Math.round(1 / FPS / STEP); // 4
-  const OUTRO = 3;          // 승자 화면 유지 시간(초)
-  const MAX_TIME = 240;     // 모의 전투 최대 길이(초)
+  const C = window.VideoCore;
+  const { W, H, ARENA, FPS, OUTRO } = C;
   const BITRATE = 8000000;
-  const DISPLAY = '"Black Han Sans", "Noto Sans KR", sans-serif';
-  const BODY = '"Noto Sans KR", system-ui, sans-serif';
+  const OUT_SCALE = 2 / 3;  // 출력 크기 배율 (1 = 1080x1920, 2/3 = 720x1280)
+  const OW = Math.round(W * OUT_SCALE), OH = Math.round(H * OUT_SCALE);
+  const MAX_WORKERS = 6;    // 동시에 영상을 만드는 작업자 수 상한
   const $ = (id) => document.getElementById(id);
-  const nativeRandom = Math.random;
 
   let defs = [], blob = null, ext = 'mp4', job = 0;
   let liveRec = null, liveGame = null;
 
-  /* ---------- 공통 유틸 ---------- */
-  function mulberry32(seed) {
-    let a = seed >>> 0;
-    return function () {
-      a = (a + 0x6D2B79F5) >>> 0;
-      let t = a;
-      t = Math.imul(t ^ (t >>> 15), t | 1);
-      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-  }
-  // 전투 계산은 고정된 난수로, 그리기 효과는 일반 난수로
-  function seeded(rng, fn) {
-    Math.random = rng;
-    try { return fn(); } finally { Math.random = nativeRandom; }
-  }
   const nextTick = () => new Promise((r) => setTimeout(r, 0));
-
-  function fit(ctx, str, maxW) {
-    if (ctx.measureText(str).width <= maxW) return str;
-    let s = str;
-    while (s.length > 1 && ctx.measureText(s + '…').width > maxW) s = s.slice(0, -1);
-    return s + '…';
-  }
-
-  function roundRect(ctx, x, y, w, h, r) {
-    r = Math.max(0, Math.min(r, w / 2, h / 2));
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.arcTo(x + w, y, x + w, y + h, r);
-    ctx.arcTo(x + w, y + h, x, y + h, r);
-    ctx.arcTo(x, y + h, x, y, r);
-    ctx.arcTo(x, y, x + w, y, r);
-    ctx.closePath();
-  }
-
-  /* ---------- 스킬 상태 ---------- */
-  function skillState(g, sk) {
-    const d = sk.def;
-    const cd = d.cooldown || 0;
-    const flash = sk.lastCast != null && g.time - sk.lastCast < 0.6;
-    if (sk.trigger === 'cooldown' || cd > 0) {
-      if (sk.timer > 0 && cd > 0) {
-        return { text: sk.timer.toFixed(1) + 's', ratio: 1 - sk.timer / cd, ready: false, flash };
-      }
-      return { text: sk.trigger === 'cooldown' ? '준비' : '패시브', ratio: 1, ready: true, flash };
-    }
-    if (sk.trigger === 'lowHp' || sk.trigger === 'onDeath' || sk.trigger === 'start') {
-      return sk.used ? { text: '사용함', ratio: 0, ready: false, used: true, flash } : { text: '대기', ratio: 1, ready: true, flash };
-    }
-    return { text: '패시브', ratio: 1, ready: true, passive: true, flash };
-  }
-
-  /* ---------- 영상 한 프레임 그리기 ---------- */
-  function drawFrame(g, outroT) {
-    const cv = $('recCanvas');
-    const ctx = cv.getContext('2d');
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = '#0f1118';
-    ctx.fillRect(0, 0, W, H);
-    ctx.textBaseline = 'middle';
-
-    // 제목
-    ctx.font = `400 54px ${DISPLAY}`;
-    const t1 = 'BALL ', t2 = 'BATTLE';
-    const w1 = ctx.measureText(t1).width, w2 = ctx.measureText(t2).width;
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#eef0f7'; ctx.fillText(t1, W / 2 - (w1 + w2) / 2, 70);
-    ctx.fillStyle = '#ffc83d'; ctx.fillText(t2, W / 2 - (w1 + w2) / 2 + w1, 70);
-    ctx.textAlign = 'center';
-
-    // 대진
-    if (g.balls.length === 2) {
-      const [a, b] = g.balls;
-      ctx.font = `400 66px ${DISPLAY}`;
-      ctx.fillStyle = a.color; ctx.textAlign = 'right'; ctx.fillText(fit(ctx, a.name, 400), W / 2 - 70, 160);
-      ctx.fillStyle = b.color; ctx.textAlign = 'left'; ctx.fillText(fit(ctx, b.name, 400), W / 2 + 70, 160);
-      ctx.textAlign = 'center'; ctx.fillStyle = '#8f97ad'; ctx.font = `400 44px ${DISPLAY}`;
-      ctx.fillText('VS', W / 2, 163);
-    } else {
-      ctx.font = `400 66px ${DISPLAY}`;
-      ctx.fillStyle = '#eef0f7';
-      ctx.fillText(`${g.balls.length}인 난투`, W / 2, 160);
-    }
-
-    // 시간
-    ctx.font = `400 38px ${DISPLAY}`;
-    ctx.fillStyle = g.suddenDeath ? '#ff5d5d' : '#8f97ad';
-    ctx.fillText(g.suddenDeath ? `서든데스  ${g.time.toFixed(1)}` : g.time.toFixed(1), W / 2, 238);
-
-    // 경기장
-    ctx.drawImage(g.canvas, ARENA.x, ARENA.y, ARENA.size, ARENA.size);
-    ctx.strokeStyle = g.suddenDeath ? '#ff5a5a' : '#3a4462';
-    ctx.lineWidth = 4;
-    roundRect(ctx, ARENA.x, ARENA.y, ARENA.size, ARENA.size, 16); ctx.stroke();
-
-    drawCards(ctx, g, ARENA.y + ARENA.size + 28, 1700);
-    drawLog(ctx, g, 1716, H - 24);
-
-    if (outroT >= 0) drawWinner(ctx, g, outroT);
-  }
-
-  // 캐릭터별 체력 + 스킬 쿨타임
-  function drawCards(ctx, g, top, bottom) {
-    const n = g.balls.length;
-    const cols = n <= 4 ? 2 : n <= 9 ? 3 : 4;
-    const rows = Math.ceil(n / cols);
-    const gap = 16;
-    const cardW = (W - 80 - gap * (cols - 1)) / cols;
-    const cardH = (bottom - top - gap * (rows - 1)) / rows;
-    const pad = Math.min(22, cardW * 0.06);
-
-    g.balls.forEach((b, i) => {
-      const x = 40 + (i % cols) * (cardW + gap);
-      const y = top + Math.floor(i / cols) * (cardH + gap);
-      ctx.globalAlpha = b.alive ? 1 : 0.35;
-      ctx.fillStyle = '#181c27';
-      roundRect(ctx, x, y, cardW, cardH, 14); ctx.fill();
-
-      // 이름 줄
-      const headH = Math.min(58, cardH * 0.3);
-      const fs = Math.min(34, headH * 0.62, cardW * 0.1);
-      const midY = y + pad * 0.6 + headH / 2;
-      ctx.fillStyle = b.color;
-      ctx.beginPath(); ctx.arc(x + pad + fs * 0.4, midY, fs * 0.4, 0, Math.PI * 2); ctx.fill();
-      ctx.textAlign = 'right'; ctx.fillStyle = '#8f97ad'; ctx.font = `700 ${fs * 0.82}px ${BODY}`;
-      const hpText = b.alive ? String(Math.ceil(b.hp)) : '탈락';
-      ctx.fillText(hpText, x + cardW - pad, midY);
-      const hpW = ctx.measureText(hpText).width;
-      ctx.textAlign = 'left'; ctx.fillStyle = '#eef0f7'; ctx.font = `800 ${fs}px ${BODY}`;
-      ctx.fillText(fit(ctx, b.name, cardW - pad * 2 - fs - 12 - hpW - 10), x + pad + fs + 10, midY);
-
-      // 체력 바
-      const by = y + pad * 0.6 + headH + 2, bw = cardW - pad * 2, bh = Math.max(6, Math.min(12, cardH * 0.05));
-      const ratio = Math.max(0, b.hp / b.maxHp);
-      ctx.fillStyle = '#2c3349'; roundRect(ctx, x + pad, by, bw, bh, bh / 2); ctx.fill();
-      ctx.fillStyle = ratio > 0.5 ? '#5ee07a' : ratio > 0.25 ? '#ffc23d' : '#ff5252';
-      if (ratio > 0) { roundRect(ctx, x + pad, by, Math.max(bh, bw * ratio), bh, bh / 2); ctx.fill(); }
-      if (b.status.shield) {
-        ctx.fillStyle = '#7fe3ff';
-        roundRect(ctx, x + pad, by - 5, bw * Math.min(1, b.status.shield.amount / b.maxHp), 3, 1.5); ctx.fill();
-      }
-
-      // 스킬 목록
-      const skills = b.skills;
-      if (!skills.length) {
-        ctx.fillStyle = '#5d6580'; ctx.font = `500 ${Math.min(26, fs * 0.75)}px ${BODY}`;
-        ctx.fillText('스킬 없음', x + pad, by + bh + Math.min(40, (cardH - headH) * 0.3));
-        ctx.globalAlpha = 1;
-        return;
-      }
-      const areaTop = by + bh + 12;
-      const areaH = y + cardH - pad * 0.6 - areaTop;
-      const lh = Math.min(72, areaH / skills.length);
-      skills.forEach((sk, k) => {
-        const st = skillState(g, sk);
-        const ly = areaTop + k * lh;
-        const col = sk.def.color || '#ffd23f';
-        if (lh >= 26) {
-          const sfs = Math.min(32, lh * 0.46, cardW * 0.075);
-          const ty = ly + lh * 0.36;
-          if (st.flash) {
-            ctx.fillStyle = col; ctx.globalAlpha = (b.alive ? 1 : 0.35) * 0.18;
-            roundRect(ctx, x + pad - 8, ly - 2, cardW - pad * 2 + 16, lh - 2, 8); ctx.fill();
-            ctx.globalAlpha = b.alive ? 1 : 0.35;
-          }
-          ctx.textAlign = 'right';
-          ctx.font = `700 ${sfs * 0.9}px ${BODY}`;
-          ctx.fillStyle = st.used ? '#5d6580' : st.passive ? '#8f97ad' : st.ready ? '#6dff9c' : '#c6cbe0';
-          ctx.fillText(st.text, x + cardW - pad, ty);
-          const stW = ctx.measureText(st.text).width;
-          ctx.textAlign = 'left';
-          ctx.font = `${st.flash ? 900 : 700} ${sfs}px ${BODY}`;
-          ctx.fillStyle = st.used ? '#5d6580' : st.flash ? col : '#eef0f7';
-          ctx.fillText(fit(ctx, sk.def.name || '스킬', cardW - pad * 2 - stW - 10), x + pad, ty);
-          // 쿨타임 바
-          if (!st.passive) {
-            const cy = ly + lh * 0.7, ch = Math.max(3, Math.min(6, lh * 0.1));
-            ctx.fillStyle = '#2c3349'; roundRect(ctx, x + pad, cy, bw, ch, ch / 2); ctx.fill();
-            if (st.ratio > 0) {
-              ctx.fillStyle = st.ready ? col : '#5b6688';
-              roundRect(ctx, x + pad, cy, Math.max(ch, bw * st.ratio), ch, ch / 2); ctx.fill();
-            }
-          }
-        } else {
-          // 칸이 좁으면 쿨타임 바만
-          const cy = ly + lh * 0.3, ch = Math.max(3, lh * 0.4);
-          ctx.fillStyle = '#2c3349'; roundRect(ctx, x + pad, cy, bw, ch, ch / 2); ctx.fill();
-          ctx.fillStyle = st.ready ? col : '#5b6688';
-          if (st.ratio > 0) { roundRect(ctx, x + pad, cy, Math.max(ch, bw * st.ratio), ch, ch / 2); ctx.fill(); }
-        }
-      });
-      ctx.globalAlpha = 1;
-    });
-    ctx.textAlign = 'center';
-  }
-
-  // 최근 발동한 스킬 기록
-  function drawLog(ctx, g, top, bottom) {
-    const lines = 4;
-    const lh = (bottom - top) / lines;
-    const list = g.castLog.slice(-lines).reverse();
-    ctx.textAlign = 'left';
-    list.forEach((e, i) => {
-      const y = top + lh * i + lh / 2;
-      const age = g.time - e.t;
-      ctx.globalAlpha = i === 0 ? 1 : Math.max(0.35, 0.85 - i * 0.18);
-      ctx.font = `700 26px ${BODY}`;
-      ctx.fillStyle = '#5d6580';
-      ctx.fillText(e.t.toFixed(1).padStart(5, ' ') + 's', 48, y);
-      ctx.fillStyle = e.ball.color;
-      ctx.beginPath(); ctx.arc(170, y, 10, 0, Math.PI * 2); ctx.fill();
-      ctx.font = `800 30px ${BODY}`;
-      ctx.fillStyle = '#eef0f7';
-      const nm = fit(ctx, e.ball.name, 300);
-      ctx.fillText(nm, 192, y);
-      const nw = ctx.measureText(nm).width;
-      ctx.fillStyle = '#8f97ad'; ctx.font = `700 26px ${BODY}`;
-      ctx.fillText('▸', 192 + nw + 14, y);
-      ctx.fillStyle = i === 0 && age < 0.6 ? (e.color || '#ffd23f') : '#c6cbe0';
-      ctx.font = `800 30px ${BODY}`;
-      ctx.fillText(fit(ctx, e.name, W - 80 - (192 + nw + 46)), 192 + nw + 46, y);
-    });
-    if (!list.length) {
-      ctx.globalAlpha = 0.6; ctx.fillStyle = '#5d6580'; ctx.font = `700 26px ${BODY}`;
-      ctx.fillText('스킬 기록', 48, top + lh / 2);
-    }
-    ctx.globalAlpha = 1;
-    ctx.textAlign = 'center';
-  }
-
-  function drawWinner(ctx, g, t) {
-    const winners = g.living();
-    const k = Math.min(1, t / 0.4);
-    ctx.globalAlpha = 0.74 * k;
-    ctx.fillStyle = '#08090e';
-    ctx.fillRect(0, 0, W, H);
-    ctx.globalAlpha = k;
-    ctx.textAlign = 'center';
-    const w = winners[0];
-    const cy = ARENA.y + ARENA.size / 2;
-    ctx.font = `800 40px ${BODY}`;
-    ctx.fillStyle = '#ffc83d';
-    ctx.fillText('W I N N E R', W / 2, cy - 230);
-    if (w) {
-      const r = 120 * (0.6 + 0.4 * k);
-      const grd = ctx.createRadialGradient(W / 2 - r * 0.35, cy - 40 - r * 0.4, r * 0.1, W / 2, cy - 40, r);
-      grd.addColorStop(0, BallBattle.util.shade(w.color, 0.35));
-      grd.addColorStop(1, BallBattle.util.shade(w.color, -0.25));
-      ctx.fillStyle = grd;
-      ctx.beginPath(); ctx.arc(W / 2, cy - 40, r, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.font = `400 ${Math.round(r * 0.95)}px ${DISPLAY}`;
-      ctx.fillText(w.icon, W / 2, cy - 36);
-    }
-    ctx.fillStyle = '#eef0f7'; ctx.font = `400 96px ${DISPLAY}`;
-    const name = w ? (winners.length > 1 ? winners.map((x) => x.name).join(', ') : w.name) : '무승부';
-    ctx.fillText(fit(ctx, name, W - 120), W / 2, cy + 170);
-    ctx.fillStyle = '#8f97ad'; ctx.font = `700 36px ${BODY}`;
-    ctx.fillText(`${g.time.toFixed(1)}초`, W / 2, cy + 260);
-    ctx.globalAlpha = 1;
-  }
-
-  /* ---------- 모의 전투 ---------- */
-  function newGame(rng, canvas) {
-    return seeded(rng, () => {
-      const g = new BallBattle.Game(canvas, defs, {});
-      g.balls.forEach((b) => g.fire(b, 'start', {}));
-      return g;
-    });
-  }
-
-  function stepFrame(g, rng) {
-    seeded(rng, () => {
-      for (let i = 0; i < STEPS_PER_FRAME && !g.ended; i++) {
-        if (g.time >= MAX_TIME) { g.ended = true; break; }
-        g.update(STEP);
-      }
-    });
-  }
-
-  // 1차: 그림 없이 끝까지 계산해서 길이를 알아냄
-  function estimateFrames(seed) {
-    const rng = mulberry32(seed);
-    const g = newGame(rng, document.createElement('canvas'));
-    let f = 0;
-    while (!g.ended) { stepFrame(g, rng); f++; }
-    return f + OUTRO * FPS;
-  }
 
   /* ---------- 인코딩 ---------- */
   function webCodecsReady() {
@@ -321,7 +28,7 @@
   }
 
   async function pickEncoder() {
-    const base = { width: W, height: H, bitrate: BITRATE, framerate: FPS };
+    const base = { width: OW, height: OH, bitrate: Math.round(BITRATE * OUT_SCALE * OUT_SCALE), framerate: FPS, latencyMode: 'realtime' };
     const avc = ['avc1.640028', 'avc1.4d0028', 'avc1.420028', 'avc1.640032', 'avc1.42e032'];
     for (const codec of avc) {
       const cfg = Object.assign({ codec, avc: { format: 'avc' } }, base);
@@ -334,67 +41,231 @@
     return null;
   }
 
+  // 메인 스레드가 잠깐 쉬어서 화면(진행률)이 갱신되게 함. setTimeout보다 지연이 적음
+  const yieldChannel = new MessageChannel();
+  const yieldQueue = [];
+  yieldChannel.port1.onmessage = () => { const r = yieldQueue.shift(); if (r) r(); };
+  const yieldNow = () => new Promise((r) => { yieldQueue.push(r); yieldChannel.port2.postMessage(0); });
+
   async function renderVideo(myJob) {
     const enc = await pickEncoder();
     if (!enc) return false;
     if (myJob !== job) return true;
 
-    const seed = (nativeRandom() * 2 ** 32) >>> 0;
-    const estimate = estimateFrames(seed);
+    const seed = (Math.random() * 2 ** 32) >>> 0;
+    const total = C.countFrames(defs, seed);
+    const cores = navigator.hardwareConcurrency || 4;
+    const k = Math.max(1, Math.min(MAX_WORKERS, cores, Math.ceil(total / (FPS * 2))));
 
-    const target = new Mp4Muxer.ArrayBufferTarget();
-    const muxer = new Mp4Muxer.Muxer({
-      target,
-      video: { codec: enc.mux, width: W, height: H, frameRate: FPS },
-      fastStart: 'in-memory',
-      firstTimestampBehavior: 'offset',
-    });
-    let encErr = null;
-    const encoder = new VideoEncoder({
-      output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
-      error: (e) => { encErr = e; },
-    });
-    encoder.configure(enc.cfg);
-
-    const rng = mulberry32(seed);
-    const arena = document.createElement('canvas');
-    arena.width = ARENA.size; arena.height = ARENA.size;
-    const g = newGame(rng, arena);
-    g.banner = { str: 'FIGHT!', life: 1.2, max: 1.2 };
-    let endFrame = -1;
-    const frameDur = 1e6 / FPS;
-
-    for (let f = 0; ; f++) {
-      if (myJob !== job) { try { encoder.close(); } catch (e) { /* 이미 닫힘 */ } return true; }
-      if (encErr) throw encErr;
-      if (f > 0) stepFrame(g, rng);
-      if (g.ended && endFrame < 0) endFrame = f;
-      g.render();
-      drawFrame(g, endFrame >= 0 ? (f - endFrame) / FPS : -1);
-      const frame = new VideoFrame($('recCanvas'), { timestamp: Math.round(f * frameDur), duration: Math.round(frameDur) });
-      encoder.encode(frame, { keyFrame: f % (FPS * 2) === 0 });
-      frame.close();
-      if (endFrame >= 0 && f - endFrame >= OUTRO * FPS) break;
-
-      while (encoder.encodeQueueSize > 4) await new Promise((r) => setTimeout(r, 2));
-      if (f % 3 === 0) {
-        setProgress(Math.min(0.99, f / estimate), g.time);
-        await nextTick();
+    let result = null;
+    if (workersReady()) {
+      try {
+        result = await encodeWithWorkers(enc, seed, total, k, myJob);
+        if (result === 'mismatch') result = await encodeWithWorkers(enc, seed, total, 1, myJob);
+      } catch (e) {
+        console.warn('[녹화] 작업자 사용 실패, 페이지에서 직접 만듦', e);
+        result = null;
       }
     }
-    await encoder.flush();
-    encoder.close();
-    if (encErr) throw encErr;
-    muxer.finalize();
-    if (myJob !== job) return true;
+    if (!result && myJob === job) {
+      result = await encodeOnPage(enc, seed, total, Math.min(4, k), myJob);
+      if (result === 'mismatch') result = await encodeOnPage(enc, seed, total, 1, myJob);
+    }
+    if (!result || result === 'mismatch' || myJob !== job) return true;
+
     ext = 'mp4';
-    blob = new Blob([target.buffer], { type: 'video/mp4' });
-    setProgress(1, g.time);
+    blob = new Blob([result], { type: 'video/mp4' });
+    setProgress(1);
     showSave();
     return true;
   }
 
-  function setProgress(p, t) {
+  // 영상 화면 안에서 경기장이 들어갈 자리 (출력 픽셀 단위)
+  function arenaView() {
+    return { x: ARENA.x * OUT_SCALE, y: ARENA.y * OUT_SCALE, size: ARENA.size * OUT_SCALE };
+  }
+
+  function splitSegments(total, k) {
+    const segLen = Math.ceil(total / k);
+    const out = [];
+    for (let i = 0; i < k; i++) {
+      const start = i * segLen, end = Math.min(total, start + segLen);
+      if (start < end) out.push({ start, end });
+    }
+    return out;
+  }
+
+  function decoderDescKey(chunks) {
+    const c = chunks.find((o) => o.meta && o.meta.decoderConfig);
+    const d = c && c.meta.decoderConfig.description;
+    if (!d) return '';
+    const u = d instanceof ArrayBuffer ? new Uint8Array(d) : new Uint8Array(d.buffer, d.byteOffset, d.byteLength);
+    return Array.from(u).join(',');
+  }
+
+  // 구간들을 순서대로 이어 붙여 MP4로 만듦. 구간마다 인코더 설정(SPS/PPS)이 같아야 함
+  function mux(enc, segChunks) {
+    const k0 = decoderDescKey(segChunks[0]);
+    if (segChunks.some((c) => decoderDescKey(c) !== k0)) return 'mismatch';
+    const target = new Mp4Muxer.ArrayBufferTarget();
+    const muxer = new Mp4Muxer.Muxer({
+      target,
+      video: { codec: enc.mux, width: OW, height: OH, frameRate: FPS },
+      fastStart: 'in-memory',
+      firstTimestampBehavior: 'offset',
+    });
+    for (const list of segChunks) for (const o of list) muxer.addVideoChunk(o.chunk, o.meta);
+    muxer.finalize();
+    return target.buffer;
+  }
+
+  /* ----- 방법 1: Web Worker 여러 개가 동시에 그리고 인코딩 ----- */
+  function workersReady() {
+    return typeof Worker !== 'undefined' && typeof OffscreenCanvas !== 'undefined' && location.protocol !== 'file:';
+  }
+
+  // 페이지에 불러온 웹폰트 정보를 작업자에게 넘김 (link에 crossorigin 필요)
+  function fontRules() {
+    const out = [];
+    for (const sh of Array.from(document.styleSheets)) {
+      let rules;
+      try { rules = sh.cssRules; } catch (e) { continue; }
+      if (!rules) continue;
+      for (const r of Array.from(rules)) {
+        if (r.type !== 5) continue; // CSSRule.FONT_FACE_RULE
+        const st = r.style;
+        out.push({
+          family: st.getPropertyValue('font-family').replace(/["']/g, '').trim(),
+          src: st.getPropertyValue('src'),
+          weight: st.getPropertyValue('font-weight'),
+          style: st.getPropertyValue('font-style'),
+          unicodeRange: st.getPropertyValue('unicode-range'),
+        });
+      }
+    }
+    return out;
+  }
+
+  function fontSampleText() {
+    const words = ['BALL BATTLE VS FIGHT! W I N N E R 0123456789.s…▸+', '인 난투 서든데스 준비 패시브 대기 사용함 스킬 없음 탈락 무승부 초 무적 막음'];
+    defs.forEach((d) => {
+      words.push(d.name || '', d.icon || '');
+      (d.skills || []).forEach((sk) => words.push(sk.name || ''));
+    });
+    return Array.from(new Set(words.join('').split(''))).join('');
+  }
+
+  let activeWorkers = [];
+  function stopWorkers() {
+    activeWorkers.forEach((w) => { try { w.postMessage({ type: 'cancel' }); w.terminate(); } catch (e) { /* 무시 */ } });
+    activeWorkers = [];
+  }
+
+  function encodeWithWorkers(enc, seed, total, k, myJob) {
+    const picks = defs.map((d) => (window.CHARACTERS || []).indexOf(d));
+    if (picks.some((i) => i < 0)) return Promise.resolve(null);
+    const segs = splitSegments(total, k);
+    const fonts = fontRules();
+    const text = fontSampleText();
+    const preview = $('recCanvas').getContext('2d');
+    let done = 0;
+    const workerUrl = new URL('js/video-worker.js', document.baseURI).href;
+
+    return new Promise((resolve, reject) => {
+      const results = new Array(segs.length);
+      let finished = 0, failed = false;
+      const fail = (err) => { if (failed) return; failed = true; stopWorkers(); reject(err); };
+      segs.forEach((seg, i) => {
+        let w;
+        try { w = new Worker(workerUrl); } catch (e) { fail(e); return; }
+        activeWorkers.push(w);
+        w.onerror = (e) => fail(new Error(e.message || '작업자 오류'));
+        w.onmessage = (e) => {
+          const m = e.data;
+          if (myJob !== job) { stopWorkers(); resolve(null); return; }
+          if (m.type === 'progress') { done += m.n; setProgress(0.97 * done / total); }
+          else if (m.type === 'preview') { preview.drawImage(m.bmp, 0, 0, W, H); m.bmp.close(); }
+          else if (m.type === 'error') fail(new Error(m.message));
+          else if (m.type === 'done') {
+            results[i] = m.chunks.map((c) => ({
+              chunk: new EncodedVideoChunk({ type: c.type, timestamp: c.timestamp, duration: c.duration, data: c.data }),
+              meta: c.decoderConfig ? { decoderConfig: c.decoderConfig } : undefined,
+            }));
+            w.terminate();
+            if (++finished === segs.length) {
+              activeWorkers = [];
+              try { resolve(mux(enc, results)); } catch (err) { reject(err); }
+            }
+          }
+        };
+        w.postMessage({
+          type: 'go', seed, picks, start: seg.start, end: seg.end,
+          cfg: enc.cfg, width: OW, height: OH, view: arenaView(),
+          fonts, text, preview: i === 0,
+        });
+      });
+    });
+  }
+
+  /* ----- 방법 2: 페이지에서 직접 (작업자를 못 쓰는 환경) ----- */
+  async function encodeOnPage(enc, seed, total, k, myJob) {
+    const segs = splitSegments(total, k).map(({ start, end }) => {
+      const rng = C.mulberry32(seed);
+      const canvas = C.makeCanvas(OW, OH);
+      const g = C.newGame(defs, rng, canvas, arenaView());
+      g.banner = { str: 'FIGHT!', life: 1.2, max: 1.2 };
+      let endFrame = -1;
+      for (let f = 1; f <= start; f++) {
+        C.stepFrame(g, rng);
+        if (g.ended && endFrame < 0) endFrame = f;
+      }
+      const seg = { start, end, f: start, g, rng, endFrame, canvas, out: [], err: null };
+      seg.encoder = new VideoEncoder({
+        output: (chunk, meta) => seg.out.push({ chunk, meta }),
+        error: (e) => { seg.err = e; },
+      });
+      seg.encoder.configure(enc.cfg);
+      return seg;
+    });
+
+    const frameDur = 1e6 / FPS;
+    const preview = $('recCanvas').getContext('2d');
+    let done = 0, lastYield = performance.now();
+    const cleanup = () => segs.forEach((s) => { try { s.encoder.close(); } catch (e) { /* 이미 닫힘 */ } });
+
+    while (done < total) {
+      if (myJob !== job) { cleanup(); return null; }
+      let progressed = false;
+      for (const seg of segs) {
+        if (seg.err) { cleanup(); throw seg.err; }
+        if (seg.f >= seg.end || seg.encoder.encodeQueueSize > 3) continue;
+        const f = seg.f, g = seg.g;
+        if (f > seg.start) C.stepFrame(g, seg.rng);
+        if (g.ended && seg.endFrame < 0) seg.endFrame = f;
+        C.drawFrame(g, seg.endFrame >= 0 ? (f - seg.endFrame) / FPS : -1, seg.canvas);
+        const frame = new VideoFrame(seg.canvas, { timestamp: Math.round(f * frameDur), duration: Math.round(frameDur) });
+        seg.encoder.encode(frame, { keyFrame: f === seg.start || (f - seg.start) % (FPS * 2) === 0 });
+        frame.close();
+        seg.f++; done++; progressed = true;
+      }
+      const now = performance.now();
+      if (!progressed || now - lastYield > 40) {
+        if (now - lastYield > 40) {
+          preview.drawImage(segs[0].f < segs[0].end ? segs[0].canvas : segs[segs.length - 1].canvas, 0, 0, W, H);
+          setProgress(0.97 * done / total);
+        }
+        lastYield = now;
+        await (progressed ? yieldNow() : new Promise((r) => setTimeout(r, 1)));
+      }
+    }
+    await Promise.all(segs.map((s) => s.encoder.flush()));
+    cleanup();
+    for (const s of segs) if (s.err) throw s.err;
+    if (myJob !== job) return null;
+    return mux(enc, segs.map((s) => s.out));
+  }
+
+  function setProgress(p) {
     $('recBar').style.width = (p * 100).toFixed(1) + '%';
     $('recPct').textContent = `영상 만드는 중 ${Math.floor(p * 100)}%`;
   }
@@ -420,7 +291,7 @@
       onEnd: () => { endAt = performance.now(); },
       onFrame: (g) => {
         const t = endAt >= 0 ? (performance.now() - endAt) / 1000 : -1;
-        drawFrame(g, t);
+        C.drawFrame(g, t, $('recCanvas'));
         if (t >= OUTRO && !finishing) {
           finishing = true;
           stopLive();
@@ -442,7 +313,7 @@
       blob = new Blob(chunks, { type: type.split(';')[0] });
       showSave();
     };
-    drawFrame(liveGame, -1);
+    C.drawFrame(liveGame, -1, $('recCanvas'));
     liveRec.start(1000);
     liveGame.start();
     return true;
@@ -463,7 +334,7 @@
     $('battle').hidden = true;
     $('recSave').hidden = true;
     $('record').hidden = false;
-    setProgress(0, 0);
+    setProgress(0);
     fitView();
     await nextTick();
     try {
@@ -482,12 +353,14 @@
 
   function cancel() {
     job++;
+    stopWorkers();
     stopLive();
     close();
   }
 
   function close() {
     job++;
+    stopWorkers();
     stopLive();
     const v = $('recVideo');
     if (v.src) { URL.revokeObjectURL(v.src); v.removeAttribute('src'); v.load(); }

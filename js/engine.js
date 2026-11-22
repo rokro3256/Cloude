@@ -138,7 +138,7 @@
       this.zones = [];
       this.timers = [];
       this.castLog = []; // 발동한 스킬 기록 {t, ball, name, color}
-      this.fx = { texts: [], parts: [], rings: [], bolts: [] };
+      this.fx = { texts: [], parts: [], ambient: [], rings: [], bolts: [] };
       this.shakeAmt = 0;
       this.ended = false;
       this.endTimer = -1;
@@ -646,9 +646,11 @@
         const t = F.texts[i]; t.life -= dt; t.y -= 34 * dt;
         if (t.life <= 0) F.texts.splice(i, 1);
       }
-      for (let i = F.parts.length - 1; i >= 0; i--) {
-        const p = F.parts[i]; p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.96; p.vy *= 0.96;
-        if (p.life <= 0) F.parts.splice(i, 1);
+      for (const list of [F.parts, F.ambient]) {
+        for (let i = list.length - 1; i >= 0; i--) {
+          const p = list[i]; p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.96; p.vy *= 0.96;
+          if (p.life <= 0) list.splice(i, 1);
+        }
       }
       for (const k of ['rings', 'bolts']) {
         for (let i = F[k].length - 1; i >= 0; i--) { F[k][i].life -= dt; if (F[k][i].life <= 0) F[k].splice(i, 1); }
@@ -687,15 +689,14 @@
       this.canvas.height = Math.round(cssSize * dpr);
     }
 
-    render() {
-      const ctx = this.ctx, A = this.A;
-      const s = this.canvas.width / A;
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-      const sx = (Math.random() - 0.5) * this.shakeAmt, sy = (Math.random() - 0.5) * this.shakeAmt;
-      ctx.setTransform(s, 0, 0, s, sx * s, sy * s);
-
-      // 바닥
+    // 바닥(격자)은 매 프레임 다시 그리지 않고 한 번 그려 둔 그림을 씀
+    floorImage(px) {
+      const key = px + (this.suddenDeath ? 'sd' : '');
+      if (this._floorKey === key) return this._floor;
+      const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(px, px) : document.createElement('canvas');
+      c.width = px; c.height = px;
+      const A = this.A, ctx = c.getContext('2d');
+      ctx.setTransform(px / A, 0, 0, px / A, 0, 0);
       ctx.fillStyle = this.suddenDeath ? '#24161a' : '#171b26';
       ctx.fillRect(0, 0, A, A);
       ctx.strokeStyle = this.suddenDeath ? 'rgba(255,90,90,0.08)' : 'rgba(150,170,220,0.07)';
@@ -708,6 +709,28 @@
       ctx.strokeStyle = this.suddenDeath ? '#ff5a5a' : '#3a4462';
       ctx.lineWidth = 4;
       ctx.strokeRect(2, 2, A - 4, A - 4);
+      this._floor = c; this._floorKey = key;
+      return c;
+    }
+
+    // view = {x, y, size}: 다른 그림(영상 화면) 안의 일부 영역에 경기장을 그림
+    render() {
+      const ctx = this.ctx, A = this.A;
+      const v = this.view;
+      const px = v ? v.size : this.canvas.width;
+      const ox = v ? v.x : 0, oy = v ? v.y : 0;
+      const s = px / A;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      if (v) {
+        ctx.save();
+        ctx.beginPath(); ctx.rect(ox, oy, px, px); ctx.clip();
+      } else {
+        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      }
+      const sx = (Math.random() - 0.5) * this.shakeAmt, sy = (Math.random() - 0.5) * this.shakeAmt;
+      ctx.setTransform(1, 0, 0, 1, ox + sx * s, oy + sy * s);
+      if (!this.skipFloor) ctx.drawImage(this.floorImage(Math.round(px)), 0, 0, px, px);
+      ctx.setTransform(s, 0, 0, s, ox + sx * s, oy + sy * s);
 
       // 장판
       for (const z of this.zones) {
@@ -754,7 +777,7 @@
           ctx.restore();
         } else {
           ctx.fillStyle = p.color;
-          ctx.shadowColor = p.color; ctx.shadowBlur = 12;
+          if (!this.fastFx) { ctx.shadowColor = p.color; ctx.shadowBlur = 12; }
           ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, TAU); ctx.fill();
           ctx.shadowBlur = 0;
           ctx.fillStyle = 'rgba(255,255,255,0.75)';
@@ -769,7 +792,7 @@
       // 번개
       for (const bo of this.fx.bolts) {
         ctx.globalAlpha = bo.life / bo.max;
-        ctx.strokeStyle = bo.color; ctx.lineWidth = 3; ctx.shadowColor = bo.color; ctx.shadowBlur = 14;
+        ctx.strokeStyle = bo.color; ctx.lineWidth = 3; if (!this.fastFx) { ctx.shadowColor = bo.color; ctx.shadowBlur = 14; }
         ctx.beginPath();
         for (let i = 0; i < bo.pts.length - 1; i++) {
           const [x1, y1] = bo.pts[i], [x2, y2] = bo.pts[i + 1];
@@ -796,7 +819,7 @@
       }
 
       // 파티클
-      for (const p of this.fx.parts) {
+      for (const p of this.fx.parts.concat(this.fx.ambient)) {
         ctx.globalAlpha = Math.max(0, p.life / p.max);
         ctx.fillStyle = p.color;
         ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
@@ -823,6 +846,7 @@
         ctx.fillStyle = '#ff6b6b'; ctx.fillText(b.str, A / 2, A / 2);
         ctx.globalAlpha = 1;
       }
+      if (v) ctx.restore();
     }
 
     drawWeapon(b) {
@@ -862,7 +886,7 @@
         case 'staff':
           ctx.strokeStyle = '#6b4e2e'; ctx.lineWidth = W * 0.55;
           ctx.beginPath(); ctx.moveTo(r0, 0); ctx.lineTo(r0 + L - W, 0); ctx.stroke();
-          ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 12;
+          ctx.fillStyle = col; if (!this.fastFx) { ctx.shadowColor = col; ctx.shadowBlur = 12; }
           ctx.beginPath(); ctx.arc(r0 + L - W * 0.6, 0, W * 0.9, 0, TAU); ctx.fill(); ctx.shadowBlur = 0;
           break;
         case 'scythe':
@@ -897,8 +921,8 @@
         ctx.beginPath(); ctx.moveTo(b.x - b.dx * b.r * 2, b.y - b.dy * b.r * 2); ctx.lineTo(b.x - b.dx * b.r * 3.5, b.y - b.dy * b.r * 3.5); ctx.stroke();
         ctx.globalAlpha = 1;
       }
-      if (st.burn && Math.random() < 0.3) this.fx.parts.push({ x: b.x + rand(-b.r, b.r) * 0.7, y: b.y + rand(-b.r, b.r) * 0.7, vx: 0, vy: -60, life: 0.4, max: 0.4, color: '#ff8a3a', size: 4 });
-      if (st.poison && Math.random() < 0.3) this.fx.parts.push({ x: b.x + rand(-b.r, b.r) * 0.7, y: b.y + rand(-b.r, b.r) * 0.7, vx: 0, vy: -40, life: 0.4, max: 0.4, color: '#a6ff4d', size: 4 });
+      if (st.burn && Math.random() < 0.3) this.fx.ambient.push({ x: b.x + rand(-b.r, b.r) * 0.7, y: b.y + rand(-b.r, b.r) * 0.7, vx: 0, vy: -60, life: 0.4, max: 0.4, color: '#ff8a3a', size: 4 });
+      if (st.poison && Math.random() < 0.3) this.fx.ambient.push({ x: b.x + rand(-b.r, b.r) * 0.7, y: b.y + rand(-b.r, b.r) * 0.7, vx: 0, vy: -40, life: 0.4, max: 0.4, color: '#a6ff4d', size: 4 });
 
       // 몸통
       const g = ctx.createRadialGradient(b.x - b.r * 0.35, b.y - b.r * 0.4, b.r * 0.1, b.x, b.y, b.r);
