@@ -214,19 +214,19 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
   display: grid; place-items: center;
 }
 .recview canvas { display: block; }
-.reccancel {
-  position: fixed;
-  top: calc(10px + env(safe-area-inset-top, 0px));
-  right: calc(10px + env(safe-area-inset-right, 0px));
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 10px; border-radius: 999px;
-  border: 0; background: rgba(0,0,0,.45); color: rgba(255,255,255,.75);
-  font-size: 12px; font-weight: 800; letter-spacing: .05em;
-  cursor: pointer;
+.recview { grid-template-rows: 1fr auto; padding-bottom: env(safe-area-inset-bottom, 0px); }
+.recview canvas { align-self: center; opacity: .55; }
+.recprog {
+  width: min(100% - 32px, 420px);
+  margin-block: 12px;
+  display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; align-items: center;
+  padding: 14px 16px; border-radius: 14px;
+  background: var(--panel); border: 1px solid var(--line);
+  font-weight: 800; font-variant-numeric: tabular-nums;
 }
-.reccancel .recdot { animation: blink 1s steps(2) infinite; }
-@keyframes blink { 50% { opacity: .2; } }
+.recprog .track { grid-column: 1; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.recprog .track i { display: block; height: 100%; width: 0; background: var(--accent); }
+.recprog .btn { grid-column: 2; grid-row: 1 / span 2; }
 .recsave { z-index: 40; }
 .recsave video { width: 100%; max-height: 52vh; border-radius: 10px; background: #000; }
 .recinfo { margin: 0; color: var(--muted); font-size: 13px; min-height: 1em; }
-@media (prefers-reduced-motion: reduce) { .reccancel .recdot { animation: none; } }

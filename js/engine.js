@@ -137,6 +137,7 @@
       this.projectiles = [];
       this.zones = [];
       this.timers = [];
+      this.castLog = []; // 발동한 스킬 기록 {t, ball, name, color}
       this.fx = { texts: [], parts: [], rings: [], bolts: [] };
       this.shakeAmt = 0;
       this.ended = false;
@@ -367,7 +368,13 @@
         res = false;
       }
       if (res === false) return false;
-      if (!sk.def.silent) this.announce(b, (sk.def.name || '스킬') + '!', sk.def.color);
+      sk.lastCast = this.time;
+      sk.casts = (sk.casts || 0) + 1;
+      if (!sk.def.silent) {
+        this.announce(b, (sk.def.name || '스킬') + '!', sk.def.color);
+        this.castLog.push({ t: this.time, ball: b, name: sk.def.name || '스킬', color: sk.def.color });
+        if (this.castLog.length > 50) this.castLog.shift();
+      }
       return true;
     }
 

@@ -42,7 +42,11 @@
 
 <section id="record" class="recview" hidden>
   <canvas id="recCanvas" width="1080" height="1920"></canvas>
-  <button id="btnRecCancel" class="reccancel" type="button" aria-label="녹화 취소"><span class="recdot"></span>REC ✕</button>
+  <div class="recprog" role="status">
+    <span id="recPct">영상 만드는 중 0%</span>
+    <span class="track"><i id="recBar"></i></span>
+    <button id="btnRecCancel" class="btn" type="button">취소</button>
+  </div>
 </section>
 
 <section id="recSave" class="overlay recsave" hidden>
@@ -79,6 +83,7 @@
 </div>
 <!-- APP:END -->
 
+<script src="js/vendor/mp4-muxer.js"></script>
 <script src="js/engine.js"></script>
 <script src="js/skills.js"></script>
 <script src="js/characters.js"></script>
