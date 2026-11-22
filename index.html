@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0f1118">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Ball Battle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;500;700;800;900&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!-- APP:START -->
+<section id="select" class="screen">
+  <header class="brand">
+    <h1>BALL <span>BATTLE</span></h1>
+    <p>싸울 캐릭터를 2명 이상 고르세요</p>
+  </header>
+  <div id="grid" class="grid"></div>
+  <div class="dock">
+    <div class="count"><b id="selCount">0</b>명 선택</div>
+    <button id="btnRandom" class="btn" type="button">랜덤 4명</button>
+    <button id="btnStart" class="btn primary" type="button" disabled>전투 시작</button>
+  </div>
+</section>
+
+<section id="battle" class="screen" hidden>
+  <div class="topbar">
+    <button id="btnBack" class="btn icon" type="button" aria-label="캐릭터 선택으로">←</button>
+    <button id="btnRestart" class="btn icon" type="button" aria-label="다시 하기">↻</button>
+    <div id="clock" class="clock">0.0</div>
+    <button id="btnSpeed" class="btn" type="button" aria-label="속도">1x</button>
+    <button id="btnPause" class="btn icon" type="button" aria-label="일시정지">❚❚</button>
+  </div>
+  <div id="stage" class="stage"><canvas id="canvas"></canvas></div>
+  <div id="roster" class="roster"></div>
+</section>
+
+<div id="overlay" class="overlay" hidden>
+  <div class="result">
+    <div class="eyebrow">WINNER</div>
+    <div id="winOrb" class="orb"></div>
+    <h2 id="winName"></h2>
+    <table>
+      <thead><tr><th>캐릭터</th><th>준 피해</th><th>처치</th></tr></thead>
+      <tbody id="winStats"></tbody>
+    </table>
+    <div class="row">
+      <button id="btnAgain" class="btn primary" type="button">다시 하기</button>
+      <button id="btnMenu" class="btn" type="button">캐릭터 선택</button>
+    </div>
+  </div>
+</div>
+<!-- APP:END -->
+
+<script src="js/engine.js"></script>
+<script src="js/skills.js"></script>
+<script src="js/characters.js"></script>
+<script src="js/ui.js"></script>
+</body>
+</html>
