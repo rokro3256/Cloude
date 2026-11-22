@@ -127,6 +127,7 @@
       this.canvas = canvas;
       this.ctx = canvas.getContext('2d');
       this.onEnd = opts.onEnd || (() => {});
+      this.onFrame = opts.onFrame || null;
       this.speedMult = 1;
       this.paused = false;
       this.time = 0;
@@ -158,6 +159,7 @@
 
     /* ---------- 루프 ---------- */
     start() {
+      this._stopped = false;
       this.balls.forEach((b) => this.fire(b, 'start', {}));
       this._last = performance.now();
       const loop = (now) => {
@@ -175,12 +177,15 @@
           if (steps >= 60) this._acc = 0;
         }
         this.render();
+        if (this.onFrame) this.onFrame(this);
+        if (this._stopped) return;
         this._raf = requestAnimationFrame(loop);
       };
       this._raf = requestAnimationFrame(loop);
     }
 
     stop() {
+      this._stopped = true;
       if (this._raf) cancelAnimationFrame(this._raf);
       this._raf = null;
     }

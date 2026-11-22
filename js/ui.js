@@ -60,6 +60,7 @@
     });
     $('selCount').textContent = selected.size;
     $('btnStart').disabled = selected.size < 2;
+    $('btnRecord').disabled = selected.size < 2;
   }
 
   $('btnRandom').addEventListener('click', () => {
@@ -73,6 +74,12 @@
     if (selected.size < 2) return;
     lastPicks = [...selected].map((i) => chars[i]);
     startBattle(lastPicks);
+  });
+
+  $('btnRecord').addEventListener('click', () => {
+    if (selected.size < 2) return;
+    lastPicks = [...selected].map((i) => chars[i]);
+    window.Recorder.start(lastPicks);
   });
 
   /* ---------- 전투 ---------- */
