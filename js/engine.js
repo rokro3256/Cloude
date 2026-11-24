@@ -79,6 +79,8 @@
     }));
   }
 
+  const CD_ROW = 19; // height of one cooldown row above the ball
+
   const WEAPON_DEFAULTS = {
     type: 'sword', length: 46, width: 8, damage: 8, spin: 4,
     knockback: 260, reverseOnHit: true, color: '#d9dde8',
@@ -373,7 +375,8 @@
     }
 
     announce(b, label, color) {
-      this.text(b.x, b.y - b.r - 28, label, color || '#ffd23f', 15, 1.1, true);
+      const rows = this.cfg.showCooldowns ? b.skills.filter((sk) => sk.def.display || (sk.trigger === 'cooldown' && sk.def.cooldown)).length : 0;
+      this.text(b.x, b.y - b.r - 28 - rows * CD_ROW, label, color || '#ffd23f', 15, 1.1, true);
     }
 
     text(x, y, str, color, size = 15, life = 0.8, bold) {
@@ -1134,9 +1137,13 @@
         }
       }
 
-      // HP 바
+      // HP bar, lifted up to leave room for the cooldown rows between it and the ball
+      const cdRows = this.cfg.showCooldowns ? this.cooldownRows(b) : [];
       const w = Math.max(44, b.r * 2), h = 6;
-      const x = b.x - w / 2, y = b.y - b.r - 14;
+      let y = b.y - b.r - 14 - cdRows.length * CD_ROW;
+      // Near the top wall the block would be cut off: show it under the name instead
+      if (y < 3) y = b.y + b.r + 22;
+      const x = b.x - w / 2;
       ctx.fillStyle = 'rgba(8,10,16,0.75)';
       ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
       const ratio = clamp(b.hp / b.maxHp, 0, 1);
@@ -1154,11 +1161,11 @@
       ctx.fillStyle = '#e8ebf5';
       ctx.fillText(b.name, b.x, b.y + b.r + 11);
 
-      if (this.cfg.showCooldowns) this.drawCooldowns(b);
+      if (cdRows.length) this.drawCooldowns(b, cdRows, y + h + 10);
     }
 
-    // Skill cooldowns under the name: "<skill> <seconds>" plus a small fill bar
-    drawCooldowns(b) {
+    // Cooldown rows for a ball: one per cooldown skill (or skill with a custom display)
+    cooldownRows(b) {
       const rows = [];
       for (const sk of b.skills) {
         const d = sk.def;
@@ -1170,6 +1177,11 @@
           rows.push({ name: d.name || '스킬', text: ready ? '준비' : sk.timer.toFixed(1) + 's', ratio: ready ? 1 : 1 - sk.timer / d.cooldown, ready, color: d.color });
         }
       }
+      return rows;
+    }
+
+    // Skill cooldowns between the HP bar and the ball: "<skill> <seconds>" plus a small fill bar
+    drawCooldowns(b, rows, startY) {
       if (!rows.length) return;
       const ctx = this.ctx;
       ctx.font = `800 11px "Noto Sans KR", system-ui, sans-serif`;
@@ -1177,7 +1189,7 @@
       let need = 0;
       for (const r of rows) need = Math.max(need, ctx.measureText(r.name).width + ctx.measureText(r.text || '00.0s').width + 10);
       const w = Math.min(170, Math.max(64, b.r * 2.4, need));
-      let y = b.y + b.r + 25;
+      let y = startY;
       ctx.textBaseline = 'middle';
       for (const r of rows) {
         const col = r.color || '#ffd23f';
@@ -1198,7 +1210,7 @@
         ctx.fillRect(b.x - w / 2, by - 1, w, 5);
         ctx.fillStyle = r.ready ? col : '#7d88aa';
         ctx.fillRect(b.x - w / 2, by, w * Math.max(0, Math.min(1, r.ratio)), 3);
-        y += 19;
+        y += CD_ROW;
       }
       ctx.textAlign = 'center';
     }
