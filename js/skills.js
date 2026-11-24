@@ -165,6 +165,43 @@
       };
     },
 
+    /* ----- 던지기 / 떨어뜨리기 ----- */
+    // Throw a spinning object at the nearest enemy (default: red bra)
+    throwItem(o) {
+      const p = P({ name: '빨간 브래지어', damage: 2, cooldown: 1, speed: 420, size: 11, shape: 'bra', color: '#e11d2e' }, o);
+      return {
+        name: p.name, color: '#ff5a6a', silent: p.silent !== false, trigger: 'cooldown', cooldown: p.cooldown, // silent: no name pop-up every throw
+        desc: `${p.cooldown}초마다 가장 가까운 적에게 던짐 (피해 ${p.damage})`,
+        cast(self, game) {
+          const t = game.nearestEnemy(self);
+          if (!t) return false;
+          game.shoot(self, { target: t, speed: p.speed, damage: p.damage, radius: p.size, color: p.color, shape: p.shape });
+        },
+      };
+    },
+
+    // Drop a heavy object from the sky on an enemy (default: graphics card)
+    skyDrop(o) {
+      const p = P({ name: '그래픽카드 낙하', damage: 28, radius: 85, delay: 1.0, cooldown: 7, shape: 'gpu', color: '#76b900' }, o);
+      return {
+        name: p.name, color: '#9be15d', sound: 'warn', trigger: 'cooldown', cooldown: p.cooldown,
+        desc: `${p.cooldown}초마다 하늘에서 떨어져 큰 피해 (${p.delay}초 뒤, 피해 ${p.damage})`,
+        cast(self, game) {
+          const t = game.nearestEnemy(self);
+          if (!t) return false;
+          // aim a little ahead of where the target is heading
+          const lead = Math.min(0.5, p.delay) * (t.speed || 0);
+          const x = Math.max(20, Math.min(game.A - 20, t.x + t.dx * lead));
+          const y = Math.max(20, Math.min(game.A - 20, t.y + t.dy * lead));
+          game.timers.push({
+            t: p.delay, total: p.delay, drop: p.shape,
+            warn: { x, y, r: p.radius, color: p.color },
+            fn: () => { if (self.alive) game.explode(x, y, p.radius, p.damage, self, { color: p.color, knockback: 520 }); },
+          });
+        },
+      };
+    },
+
     /* ----- 범위 ----- */
     explosion(o) {
       const p = P({ name: '폭발', damage: 14, radius: 120, cooldown: 7, color: '#ffb347' }, o);

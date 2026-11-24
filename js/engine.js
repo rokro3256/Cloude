@@ -831,6 +831,19 @@
         ctx.globalAlpha = 0.12; ctx.fillStyle = t.warn.color || '#ff5a5a'; ctx.fill();
         ctx.globalAlpha = 1;
       }
+      // Objects falling from the sky onto a warned spot (e.g. graphics card)
+      for (const t of this.timers) {
+        if (!t.drop || !t.warn || !t.total) continue;
+        const p = Math.max(0, Math.min(1, 1 - t.t / t.total));
+        const fall = (1 - p * p) * (t.warn.y + 120);
+        ctx.save();
+        ctx.translate(t.warn.x, t.warn.y - fall);
+        ctx.rotate(-0.35 + p * 0.25);
+        const sc = 0.75 + 0.35 * p;
+        ctx.scale(sc, sc);
+        this.drawShape(t.drop, ctx);
+        ctx.restore();
+      }
 
       // 투사체
       for (const p of this.projectiles) {
@@ -843,7 +856,13 @@
           }
           ctx.globalAlpha = 1;
         }
-        if (p.shape === 'arrow') {
+        if (p.shape !== 'arrow' && p.shape !== 'orb') {
+          ctx.save(); ctx.translate(p.x, p.y);
+          ctx.rotate(this.time * (p.spinRate || 9) + p.r);
+          const sc = p.r / 8; ctx.scale(sc, sc);
+          this.drawShape(p.shape, ctx);
+          ctx.restore();
+        } else if (p.shape === 'arrow') {
           const a = Math.atan2(p.vy, p.vx);
           ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(a);
           ctx.strokeStyle = '#d8c8a8'; ctx.lineWidth = 2.5;
@@ -923,6 +942,40 @@
         ctx.globalAlpha = 1;
       }
       if (v) ctx.restore();
+    }
+
+    // Simple vector drawings for thrown/dropped objects, centred on (0,0), about 16 units wide
+    drawShape(shape, ctx) {
+      if (shape === 'bra') {
+        ctx.strokeStyle = '#8f0f1e'; ctx.lineWidth = 1.6;
+        ctx.fillStyle = '#e11d2e';
+        ctx.beginPath(); ctx.ellipse(-5, 0, 5, 4.2, 0.25, 0, Math.PI, true); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.ellipse(5, 0, 5, 4.2, -0.25, 0, Math.PI, true); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.strokeStyle = '#e11d2e'; ctx.lineWidth = 1.4;
+        ctx.beginPath(); ctx.moveTo(-10, 0); ctx.lineTo(-14, 3); ctx.moveTo(10, 0); ctx.lineTo(14, 3);
+        ctx.moveTo(-8, -3); ctx.quadraticCurveTo(-6, -9, -3, -4); ctx.moveTo(8, -3); ctx.quadraticCurveTo(6, -9, 3, -4);
+        ctx.stroke();
+        ctx.fillStyle = '#ffd1d6';
+        ctx.beginPath(); ctx.arc(0, -0.5, 1.1, 0, TAU); ctx.fill();
+      } else if (shape === 'gpu') {
+        // graphics card: dark shroud, two fans, green accent, gold PCIe edge
+        ctx.fillStyle = '#1b1f24'; ctx.strokeStyle = '#3c434d'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.rect(-40, -18, 80, 36); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#76b900'; ctx.fillRect(-40, -18, 80, 4);
+        for (const fx of [-19, 19]) {
+          ctx.fillStyle = '#0d1013'; ctx.beginPath(); ctx.arc(fx, 2, 13, 0, TAU); ctx.fill();
+          ctx.strokeStyle = '#59606b'; ctx.lineWidth = 2;
+          for (let i = 0; i < 5; i++) {
+            const a = this.time * 25 + (i * TAU) / 5;
+            ctx.beginPath(); ctx.moveTo(fx, 2); ctx.lineTo(fx + Math.cos(a) * 11, 2 + Math.sin(a) * 11); ctx.stroke();
+          }
+          ctx.fillStyle = '#2a3038'; ctx.beginPath(); ctx.arc(fx, 2, 3.5, 0, TAU); ctx.fill();
+        }
+        ctx.fillStyle = '#d4a63a'; ctx.fillRect(-26, 18, 44, 5);
+        ctx.fillStyle = '#9aa3ad'; ctx.fillRect(36, -18, 6, 36);
+      } else {
+        ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(0, 0, 8, 0, TAU); ctx.fill();
+      }
     }
 
     drawWeapon(b) {
@@ -1116,11 +1169,14 @@
           const ready = !(sk.timer > 0);
           rows.push({ name: d.name || '스킬', text: ready ? '준비' : sk.timer.toFixed(1) + 's', ratio: ready ? 1 : 1 - sk.timer / d.cooldown, ready, color: d.color });
         }
-        if (rows.length >= 2) break;
       }
       if (!rows.length) return;
       const ctx = this.ctx;
-      const w = Math.max(64, b.r * 2.4);
+      ctx.font = `800 11px "Noto Sans KR", system-ui, sans-serif`;
+      // Width fits the longest "name + time" row so names are not cut off
+      let need = 0;
+      for (const r of rows) need = Math.max(need, ctx.measureText(r.name).width + ctx.measureText(r.text || '00.0s').width + 10);
+      const w = Math.min(170, Math.max(64, b.r * 2.4, need));
       let y = b.y + b.r + 25;
       ctx.textBaseline = 'middle';
       for (const r of rows) {

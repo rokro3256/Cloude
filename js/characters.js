@@ -52,6 +52,17 @@ window.CHARACTERS = [
     desc: '4.5초마다 가속해서 적에게 몸통 박치기',
   },
   {
+    name: '젠슨 황',
+    image: 'assets/characters/jensenhuang.jpg',
+    color: '#76b900',
+    hp: 100, radius: 28, speed: 190,
+    skills: [
+      Skills.throwItem({ name: '빨간 브래지어', damage: 2, cooldown: 1 }),
+      Skills.skyDrop({ name: '그래픽카드 낙하', damage: 28, radius: 85, delay: 1.0, cooldown: 7 }),
+    ],
+    desc: '빨간 브래지어를 던지고 하늘에서 그래픽카드를 떨어뜨림',
+  },
+  {
     name: '검사', icon: '검', color: '#e5484d',
     hp: 85, radius: 28, speed: 220,
     weapon: { type: 'sword', length: 50, width: 8, damage: 8, spin: 4.5 },
