@@ -150,7 +150,7 @@
   class Game {
     constructor(canvas, defs, opts = {}) {
       this.cfg = Object.assign({
-        arenaSize: 600, hitCooldown: 0.4, suddenDeathTime: 60, endDelay: 1.4, seek: 0, wallSpread: 140, ballScale: 1.2,
+        arenaSize: 600, hitCooldown: 0.4, suddenDeathTime: 60, endDelay: 1.4, seek: 0, wallSpread: 140, ballScale: 1.2, showCooldowns: true,
       }, window.GAME_CONFIG || {}, opts.config || {});
       this.A = this.cfg.arenaSize;
       this.canvas = canvas;
@@ -1100,6 +1100,51 @@
       ctx.strokeText(b.name, b.x, b.y + b.r + 11);
       ctx.fillStyle = '#e8ebf5';
       ctx.fillText(b.name, b.x, b.y + b.r + 11);
+
+      if (this.cfg.showCooldowns) this.drawCooldowns(b);
+    }
+
+    // Skill cooldowns under the name: "<skill> <seconds>" plus a small fill bar
+    drawCooldowns(b) {
+      const rows = [];
+      for (const sk of b.skills) {
+        const d = sk.def;
+        if (d.display) {
+          const v = d.display(b, sk) || {};
+          rows.push({ name: d.name || '스킬', text: String(v.text != null ? v.text : ''), ratio: v.ratio || 0, ready: !(sk.timer > 0), color: d.color });
+        } else if (sk.trigger === 'cooldown' && d.cooldown) {
+          const ready = !(sk.timer > 0);
+          rows.push({ name: d.name || '스킬', text: ready ? '준비' : sk.timer.toFixed(1) + 's', ratio: ready ? 1 : 1 - sk.timer / d.cooldown, ready, color: d.color });
+        }
+        if (rows.length >= 2) break;
+      }
+      if (!rows.length) return;
+      const ctx = this.ctx;
+      const w = Math.max(64, b.r * 2.4);
+      let y = b.y + b.r + 25;
+      ctx.textBaseline = 'middle';
+      for (const r of rows) {
+        const col = r.color || '#ffd23f';
+        ctx.font = `800 11px "Noto Sans KR", system-ui, sans-serif`;
+        ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(8,10,16,0.85)';
+        ctx.textAlign = 'left';
+        let label = r.name;
+        const tw = ctx.measureText(r.text).width;
+        while (label.length > 1 && ctx.measureText(label).width > w - tw - 6) label = label.slice(0, -1);
+        ctx.strokeText(label, b.x - w / 2, y);
+        ctx.fillStyle = '#c6cbe0'; ctx.fillText(label, b.x - w / 2, y);
+        ctx.textAlign = 'right';
+        ctx.strokeText(r.text, b.x + w / 2, y);
+        ctx.fillStyle = r.ready ? col : '#e8ebf5'; ctx.fillText(r.text, b.x + w / 2, y);
+        // bar
+        const by = y + 8;
+        ctx.fillStyle = 'rgba(8,10,16,0.75)';
+        ctx.fillRect(b.x - w / 2, by - 1, w, 5);
+        ctx.fillStyle = r.ready ? col : '#7d88aa';
+        ctx.fillRect(b.x - w / 2, by, w * Math.max(0, Math.min(1, r.ratio)), 3);
+        y += 19;
+      }
+      ctx.textAlign = 'center';
     }
   }
 
