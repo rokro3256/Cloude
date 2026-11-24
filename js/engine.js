@@ -150,7 +150,7 @@
   class Game {
     constructor(canvas, defs, opts = {}) {
       this.cfg = Object.assign({
-        arenaSize: 600, hitCooldown: 0.4, suddenDeathTime: 60, endDelay: 1.4, seek: 0, wallSpread: 140,
+        arenaSize: 600, hitCooldown: 0.4, suddenDeathTime: 60, endDelay: 1.4, seek: 0, wallSpread: 140, ballScale: 1.2,
       }, window.GAME_CONFIG || {}, opts.config || {});
       this.A = this.cfg.arenaSize;
       this.canvas = canvas;
@@ -181,7 +181,9 @@
         const a = off + (i / n) * TAU;
         const rr = A * 0.32;
         const team = def.team != null ? def.team : i;
-        this.balls.push(new Ball(def, A / 2 + Math.cos(a) * rr, A / 2 + Math.sin(a) * rr, team));
+        const ball = new Ball(def, A / 2 + Math.cos(a) * rr, A / 2 + Math.sin(a) * rr, team);
+        ball.r *= this.cfg.ballScale; // global ball size multiplier
+        this.balls.push(ball);
       });
       this._raf = null;
       this._last = 0;
@@ -540,6 +542,12 @@
           const spread = ((wx && wy ? 0.5 : 1) * this.cfg.wallSpread * Math.PI) / 180;
           const ang = Math.atan2(wy, wx) + (Math.random() - 0.5) * spread;
           b.dx = Math.cos(ang); b.dy = Math.sin(ang);
+          // Skills may override the bounce direction (e.g. Brain Accel aims at an enemy)
+          for (const sk of b.skills) {
+            if (sk.def.onWall) {
+              try { sk.def.onWall(b, this, { wx, wy }, sk); } catch (e) { console.error('[skill error]', sk.def.name, e); }
+            }
+          }
         }
 
         // 무기 회전
@@ -585,6 +593,14 @@
             this.dashHit(a, b, nx, ny);
             this.dashHit(b, a, -nx, -ny);
             // 몸으로 부딪혔을 때 발동하는 스킬
+            // Direct collision hooks run regardless of the skill's cooldown
+            for (const [me, other, sx, sy] of [[a, b, nx, ny], [b, a, -nx, -ny]]) {
+              for (const sk of me.skills) {
+                if (sk.def.collide && me.alive && other.alive && !me.status.stun) {
+                  try { sk.def.collide(me, this, { target: other, nx: sx, ny: sy }, sk); } catch (e) { console.error('[skill error]', sk.def.name, e); }
+                }
+              }
+            }
             if (a.alive && b.alive && !a.status.stun) this.fire(a, 'onCollide', { target: b, nx, ny });
             if (a.alive && b.alive && !b.status.stun) this.fire(b, 'onCollide', { target: a, nx: -nx, ny: -ny });
           }
@@ -976,9 +992,24 @@
         ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 8, 0, TAU); ctx.fill();
         ctx.globalAlpha = 1;
       }
-      if (b.speedBonus > 1.15) {
-        // 빨라질수록 길어지는 잔상
+      if (b.speedBonus > 1.05) {
+        // Speed effect: glowing aura + wind streaks + afterimages that grow with speed
         const k = Math.min(1, (b.speedBonus - 1) / 1.6);
+        const glow = b.def.speedColor || b.color;
+        ctx.globalAlpha = 0.18 + 0.22 * k + 0.08 * Math.sin(this.time * 30);
+        ctx.strokeStyle = glow; ctx.lineWidth = 3 + 3 * k;
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 5 + 3 * k, 0, TAU); ctx.stroke();
+        const px = -b.dy, py = b.dx;
+        ctx.lineCap = 'round';
+        for (let i = -2; i <= 2; i++) {
+          const off = i * b.r * 0.42;
+          const len = b.r * (1.2 + 2.2 * k) * (1 - Math.abs(i) * 0.18);
+          const sx = b.x + px * off - b.dx * b.r * 0.8, sy = b.y + py * off - b.dy * b.r * 0.8;
+          ctx.globalAlpha = (0.25 + 0.45 * k) * (1 - Math.abs(i) * 0.2);
+          ctx.lineWidth = 2.5 - Math.abs(i) * 0.4;
+          ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx - b.dx * len, sy - b.dy * len); ctx.stroke();
+        }
+        ctx.lineCap = 'butt';
         for (let i = 1; i <= 3; i++) {
           ctx.globalAlpha = 0.22 * k * (1 - i / 4);
           ctx.fillStyle = b.color;

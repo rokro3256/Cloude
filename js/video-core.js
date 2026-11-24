@@ -65,7 +65,7 @@
     const flash = sk.lastCast != null && g.time - sk.lastCast < 0.6;
     if (d.display) {
       // 스킬이 직접 보여줄 내용을 정함 (예: 브레인 악셀의 현재 속도)
-      const v = d.display(b) || {};
+      const v = d.display(b, sk) || {};
       return { text: String(v.text != null ? v.text : ''), ratio: Math.max(0, Math.min(1, v.ratio || 0)), ready: true, flash };
     }
     if (sk.trigger === 'cooldown' || cd > 0) {

@@ -26,7 +26,9 @@
  *
  * 추가로 쓸 수 있는 칸
  *   tick(self, game, dt) {}    매 순간(1/120초마다) 실행. 점점 빨라지기 같은 효과
- *   display(self) { return {text, ratio} }   영상의 스킬 칸에 보여줄 글자와 막대(0~1)
+ *   display(self, sk) { return {text, ratio} }   영상의 스킬 칸에 보여줄 글자와 막대(0~1)
+ *   collide(self, game, ctx) {}  적과 부딪힐 때마다 실행 (쿨다운과 무관)
+ *   onWall(self, game) {}        벽에 튕길 때마다 실행 (self.dx, self.dy로 방향을 바꿀 수 있음)
  *   self.speedBonus            이동 속도 배율 (1 = 기본)
  *
  * cast 안에서 쓸 수 있는 game 기능
@@ -276,30 +278,62 @@
 
     /* ----- 몸통 박치기 ----- */
     brainAccel(o) {
-      const p = P({ name: '브레인 악셀', accel: 0.07, maxSpeed: 2.8, baseDamage: 4, damagePerSpeed: 8, cooldown: 0.35 }, o);
+      const p = P({
+        name: '브레인 악셀', cooldown: 4.5,
+        maxSpeed: 2.6,   // top speed multiplier while active
+        ramp: 1.0,       // seconds to reach top speed
+        duration: 3.0,   // how long the boost lasts if it never hits anyone
+        decay: 1.5,      // speed multiplier lost per second after the boost ends
+        baseDamage: 6, damagePerSpeed: 8,
+        aimOnWall: true, // after casting, the next wall bounce heads for the nearest enemy
+      }, o);
       return {
-        name: p.name, color: '#5ef2ff', sound: 'cast', trigger: 'onCollide', cooldown: p.cooldown,
-        desc: `시간이 지날수록 점점 빨라짐 (최대 x${p.maxSpeed}). 적과 부딪히면 속도에 비례한 피해`,
-        // 매 순간 조금씩 가속
-        tick(self, game, dt) {
-          self.speedBonus = Math.min(p.maxSpeed, self.speedBonus + p.accel * dt);
+        name: p.name, color: '#5ef2ff', sound: 'cast', trigger: 'cooldown', cooldown: p.cooldown,
+        desc: `${p.cooldown}초마다 발동: 점점 빨라지고(최대 x${p.maxSpeed}) 다음 벽에서 적에게 방향을 틂. 부딪히면 속도에 비례한 피해`,
+        cast(self, game) {
+          self.data.brain = { active: true, t: 0, aim: p.aimOnWall };
+          game.ring(self.x, self.y, self.r * 2.2, '#5ef2ff', 0.4);
         },
-        // 부딪힌 순간 속도만큼 피해 + 밀쳐냄
-        cast(self, game, ctx) {
+        tick(self, game, dt) {
+          const st = self.data.brain;
+          if (st && st.active) {
+            st.t += dt;
+            const target = 1 + (p.maxSpeed - 1) * Math.min(1, st.t / p.ramp);
+            self.speedBonus = Math.max(self.speedBonus, target);
+            if (st.t >= p.duration) st.active = false;
+          } else if (self.speedBonus > 1) {
+            self.speedBonus = Math.max(1, self.speedBonus - p.decay * dt);
+          }
+        },
+        onWall(self, game) {
+          const st = self.data.brain;
+          if (!st || !st.aim) return;
+          const t = game.nearestEnemy(self);
+          if (!t) return;
+          st.aim = false;
+          const d = game.dist(self, t) || 1;
+          self.dx = (t.x - self.x) / d; self.dy = (t.y - self.y) / d;
+          game.particles(self.x, self.y, '#5ef2ff', 10, 220);
+        },
+        collide(self, game, ctx) {
+          const st = self.data.brain;
+          if (!st || !st.active) return;
           const t = ctx.target;
-          if (!t || !t.alive) return false;
+          st.active = false; // one hit per activation
           const over = self.speedBonus - 1;
           const dmg = p.baseDamage + p.damagePerSpeed * over;
-          const nx = ctx.nx || 0, ny = ctx.ny || 0;
-          t.kx += nx * (250 + 200 * over); t.ky += ny * (250 + 200 * over);
+          t.kx += (ctx.nx || 0) * (280 + 200 * over); t.ky += (ctx.ny || 0) * (280 + 200 * over);
           game.sound('hit', { dmg });
           game.damage(t, dmg, self, { kind: 'weapon', color: '#5ef2ff' });
           game.ring(t.x, t.y, t.r * 1.8, '#5ef2ff', 0.3);
           game.shake(Math.min(8, 2 + over * 3));
         },
-        // 영상의 스킬 칸에 현재 속도 표시
-        display(self) {
-          return { text: `x${self.speedBonus.toFixed(1)}`, ratio: (self.speedBonus - 1) / (p.maxSpeed - 1) };
+        // Video skill panel: current speed while active, otherwise the cooldown
+        display(self, sk) {
+          const st = self.data.brain;
+          if (st && st.active) return { text: `x${self.speedBonus.toFixed(1)}`, ratio: (self.speedBonus - 1) / (p.maxSpeed - 1) };
+          if (sk && sk.timer > 0) return { text: sk.timer.toFixed(1) + 's', ratio: 1 - sk.timer / p.cooldown };
+          return { text: '준비', ratio: 1 };
         },
       };
     },

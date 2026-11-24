@@ -35,6 +35,7 @@ window.GAME_CONFIG = {
   suddenDeathTime: 60,   // 이 시간이 지나면 서든데스 (0이면 없음)
   seek: 0,               // 가까운 적 쪽으로 방향을 트는 정도 (0 = 적을 쫓지 않음)
   wallSpread: 140,       // 벽에 튕길 때 무작위 방향 범위(도). 0이면 거울처럼 반사
+  ballScale: 1.2,        // 모든 공 크기 배율
 };
 
 window.CHARACTERS = [
@@ -45,9 +46,9 @@ window.CHARACTERS = [
     hp: 95, radius: 30, speed: 200,
     // 무기 없음: 몸으로 부딪혀서 공격
     skills: [
-      Skills.brainAccel({ accel: 0.07, maxSpeed: 2.8, baseDamage: 4, damagePerSpeed: 8 }),
+      Skills.brainAccel({ cooldown: 4.5, maxSpeed: 2.6, baseDamage: 8, damagePerSpeed: 10 }),
     ],
-    desc: '점점 빨라지며 몸통 박치기로 싸우는 주인공',
+    desc: '4.5초마다 가속해서 적에게 몸통 박치기',
   },
   {
     name: '검사', icon: '검', color: '#e5484d',
