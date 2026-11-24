@@ -323,11 +323,19 @@
         decay: 1.5,      // speed multiplier lost per second after the boost ends
         baseDamage: 6, damagePerSpeed: 8,
         aimOnWall: true, // after casting, the next wall bounce heads for the nearest enemy
+        stackMult: 1.2,  // each cast permanently multiplies base speed by this (stacks)
+        maxStacks: 10,   // stack cap so the ball stays controllable
       }, o);
       return {
         name: p.name, color: '#5ef2ff', sound: 'cast', trigger: 'cooldown', cooldown: p.cooldown,
-        desc: `${p.cooldown}초마다 발동: 점점 빨라지고(최대 x${p.maxSpeed}) 다음 벽에서 적에게 방향을 틂. 부딪히면 속도에 비례한 피해`,
+        desc: `${p.cooldown}초마다 발동: 점점 빨라지고(최대 x${p.maxSpeed}) 다음 벽에서 적에게 방향을 틂. 부딪히면 속도에 비례한 피해. 쓸 때마다 기본 속도 x${p.stackMult} 중첩(최대 ${p.maxStacks}중첩)`,
         cast(self, game) {
+          const stacks = self.data.brainStacks || 0;
+          if (stacks < p.maxStacks) {
+            self.data.brainStacks = stacks + 1;
+            self.baseSpeed *= p.stackMult;
+            game.text(self.x, self.y + self.r + 50, `${self.data.brainStacks}중첩`, '#5ef2ff', 13);
+          }
           self.data.brain = { active: true, t: 0, aim: p.aimOnWall };
           game.ring(self.x, self.y, self.r * 2.2, '#5ef2ff', 0.4);
         },
@@ -368,9 +376,11 @@
         // Video skill panel: current speed while active, otherwise the cooldown
         display(self, sk) {
           const st = self.data.brain;
-          if (st && st.active) return { text: `x${self.speedBonus.toFixed(1)}`, ratio: (self.speedBonus - 1) / (p.maxSpeed - 1) };
-          if (sk && sk.timer > 0) return { text: sk.timer.toFixed(1) + 's', ratio: 1 - sk.timer / p.cooldown };
-          return { text: '준비', ratio: 1 };
+          const n = self.data.brainStacks || 0;
+          const tag = n ? `${n}중첩 ` : '';
+          if (st && st.active) return { text: `${tag}x${self.speedBonus.toFixed(1)}`, ratio: (self.speedBonus - 1) / (p.maxSpeed - 1) };
+          if (sk && sk.timer > 0) return { text: tag + sk.timer.toFixed(1) + 's', ratio: 1 - sk.timer / p.cooldown };
+          return { text: tag + '준비', ratio: 1 };
         },
       };
     },

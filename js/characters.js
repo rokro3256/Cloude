@@ -47,7 +47,7 @@ window.CHARACTERS = [
     hp: 95, radius: 30, speed: 200,
     // 무기 없음: 몸으로 부딪혀서 공격
     skills: [
-      Skills.brainAccel({ cooldown: 4.5, maxSpeed: 2.6, baseDamage: 8, damagePerSpeed: 10 }),
+      Skills.brainAccel({ cooldown: 4.5, maxSpeed: 3, baseDamage: 8, damagePerSpeed: 10, stackMult: 1.2, maxStacks: 10 }),
     ],
     desc: '4.5초마다 가속해서 적에게 몸통 박치기',
   },
