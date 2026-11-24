@@ -33,13 +33,14 @@ window.GAME_CONFIG = {
   arenaSize: 600,        // 경기장 크기 (내부 단위)
   hitCooldown: 0.4,      // 같은 상대를 무기로 다시 때리기까지 대기(초)
   suddenDeathTime: 60,   // 이 시간이 지나면 서든데스 (0이면 없음)
-  seek: 0.6,             // 가까운 적 쪽으로 방향을 트는 정도 (0이면 무작위)
+  seek: 0,               // 가까운 적 쪽으로 방향을 트는 정도 (0 = 적을 쫓지 않음)
+  wallSpread: 140,       // 벽에 튕길 때 무작위 방향 범위(도). 0이면 거울처럼 반사
 };
 
 window.CHARACTERS = [
   {
-    name: '에이스',
-    image: 'assets/characters/ace.jpg', // 공 안에 들어가는 사진
+    name: '이진우',
+    image: 'assets/characters/leejinwoo.jpg', // 공 안에 들어가는 사진
     color: '#22c7e8',
     hp: 95, radius: 30, speed: 200,
     // 무기 없음: 몸으로 부딪혀서 공격

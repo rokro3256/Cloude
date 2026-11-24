@@ -150,7 +150,7 @@
   class Game {
     constructor(canvas, defs, opts = {}) {
       this.cfg = Object.assign({
-        arenaSize: 600, hitCooldown: 0.4, suddenDeathTime: 60, endDelay: 1.4, seek: 0.6,
+        arenaSize: 600, hitCooldown: 0.4, suddenDeathTime: 60, endDelay: 1.4, seek: 0, wallSpread: 140,
       }, window.GAME_CONFIG || {}, opts.config || {});
       this.A = this.cfg.arenaSize;
       this.canvas = canvas;
@@ -530,10 +530,17 @@
         b.kx *= decay; b.ky *= decay;
 
         // 벽
-        if (b.x < b.r) { b.x = b.r; b.dx = Math.abs(b.dx); b.kx = Math.abs(b.kx); }
-        if (b.x > A - b.r) { b.x = A - b.r; b.dx = -Math.abs(b.dx); b.kx = -Math.abs(b.kx); }
-        if (b.y < b.r) { b.y = b.r; b.dy = Math.abs(b.dy); b.ky = Math.abs(b.ky); }
-        if (b.y > A - b.r) { b.y = A - b.r; b.dy = -Math.abs(b.dy); b.ky = -Math.abs(b.ky); }
+        // 벽에 닿으면 벽 반대쪽 범위 안에서 무작위 방향으로 튐
+        let wx = 0, wy = 0;
+        if (b.x < b.r) { b.x = b.r; wx = 1; b.kx = Math.abs(b.kx); }
+        if (b.x > A - b.r) { b.x = A - b.r; wx = -1; b.kx = -Math.abs(b.kx); }
+        if (b.y < b.r) { b.y = b.r; wy = 1; b.ky = Math.abs(b.ky); }
+        if (b.y > A - b.r) { b.y = A - b.r; wy = -1; b.ky = -Math.abs(b.ky); }
+        if (wx || wy) {
+          const spread = ((wx && wy ? 0.5 : 1) * this.cfg.wallSpread * Math.PI) / 180;
+          const ang = Math.atan2(wy, wx) + (Math.random() - 0.5) * spread;
+          b.dx = Math.cos(ang); b.dy = Math.sin(ang);
+        }
 
         // 무기 회전
         if (b.weapon && !b.status.stun) {
