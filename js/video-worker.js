@@ -35,7 +35,7 @@ async function loadFonts(rules, text) {
 
 async function run(m) {
   const C = self.VideoCore;
-  await loadFonts(m.fonts, m.text);
+  await Promise.all([loadFonts(m.fonts, m.text), self.BallBattle.loadImages(m.picks.map((i) => self.CHARACTERS[i]), m.base)]);
   if (cancelled) return;
 
   const defs = m.picks.map((i) => self.CHARACTERS[i]);

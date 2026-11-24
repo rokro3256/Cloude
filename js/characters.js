@@ -5,6 +5,7 @@
  * {
  *   name:   '검사',        // 이름
  *   icon:   '검',          // 공 가운데 글자 (생략하면 이름 첫 글자, 이모지도 가능)
+ *   image:  'assets/characters/내사진.jpg', // 공 안에 넣을 사진 (정사각형 권장, 있으면 icon 대신 사용)
  *   color:  '#e5484d',     // 공 색
  *   hp:     120,           // 체력
  *   radius: 28,            // 공 크기
@@ -36,6 +37,17 @@ window.GAME_CONFIG = {
 };
 
 window.CHARACTERS = [
+  {
+    name: '에이스',
+    image: 'assets/characters/ace.jpg', // 공 안에 들어가는 사진
+    color: '#22c7e8',
+    hp: 95, radius: 30, speed: 200,
+    // 무기 없음: 몸으로 부딪혀서 공격
+    skills: [
+      Skills.brainAccel({ accel: 0.07, maxSpeed: 2.8, baseDamage: 4, damagePerSpeed: 8 }),
+    ],
+    desc: '점점 빨라지며 몸통 박치기로 싸우는 주인공',
+  },
   {
     name: '검사', icon: '검', color: '#e5484d',
     hp: 85, radius: 28, speed: 220,

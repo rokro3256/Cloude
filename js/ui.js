@@ -25,7 +25,7 @@
       const w = c.weapon && c.weapon.type !== 'none' ? c.weapon : null;
       const skills = (c.skills || []).map((s) => `<li><b>${esc(s.name || '스킬')}</b>${esc(s.desc || '')}</li>`).join('');
       el.innerHTML = `
-        <span class="orb" style="background:${esc(c.color || '#888')}">${esc(c.icon || (c.name || '?').charAt(0))}</span>
+        ${orbHtml(c)}
         <h3>${esc(c.name)} <span class="stats">HP ${c.hp || 100} · 속도 ${c.speed != null ? c.speed : 200}</span></h3>
         <p class="desc">${esc(c.desc || '')}</p>
         <ul>${w ? `<li><b>무기</b>${esc(weaponName(w.type))} · 피해 ${w.damage != null ? w.damage : 8}</li>` : '<li><b>무기</b>없음</li>'}${skills}</ul>`;
@@ -33,6 +33,13 @@
       grid.appendChild(el);
     });
     refreshSel();
+  }
+
+  function orbHtml(c) {
+    if (c.image) {
+      return `<span class="orb photo" style="--ring:${esc(c.color || '#888')};background-image:url('${esc(c.image)}')"></span>`;
+    }
+    return `<span class="orb" style="background:${esc(c.color || '#888')}">${esc(c.icon || (c.name || '?').charAt(0))}</span>`;
   }
 
   function weaponName(t) {
@@ -147,8 +154,17 @@
 
   function showResult(winners, g) {
     const w = winners[0];
-    $('winOrb').style.background = w ? w.color : '#444';
-    $('winOrb').textContent = w ? w.icon : '?';
+    const orb = $('winOrb');
+    if (w && w.def.image) {
+      orb.className = 'orb photo';
+      orb.style.cssText = `--ring:${w.color};background-image:url('${w.def.image}')`;
+      orb.textContent = '';
+    } else {
+      orb.className = 'orb';
+      orb.style.cssText = '';
+      orb.style.background = w ? w.color : '#444';
+      orb.textContent = w ? w.icon : '?';
+    }
     $('winName').textContent = w ? (winners.length > 1 ? winners.map((x) => x.name).join(', ') : w.name) : '무승부';
     const rows = [...g.balls]
       .sort((a, b) => b.stats.damageDealt - a.stats.damageDealt)
@@ -198,4 +214,6 @@
   });
 
   buildGrid();
+  // 캐릭터 사진을 미리 불러 둠 (전투 화면 캔버스에 그리기 위해)
+  BallBattle.loadImages(chars);
 })();

@@ -269,7 +269,7 @@
         w.postMessage({
           type: 'go', seed, picks, start: seg.start, end: seg.end,
           cfg: enc.cfg, width: OW, height: OH, view: arenaView(),
-          fonts, text, preview: i === 0,
+          fonts, text, preview: i === 0, base: document.baseURI,
         });
       });
     });
@@ -411,6 +411,7 @@
     $('record').hidden = false;
     setProgress(0);
     fitView();
+    await BallBattle.loadImages(defs);
     await nextTick();
     try {
       let ok = false;

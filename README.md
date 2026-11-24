@@ -38,6 +38,11 @@
 
 무기 종류는 `sword`, `spear`, `axe`, `hammer`, `dagger`, `staff`, `scythe`입니다. 무기가 없으면 `weapon`을 빼면 됩니다.
 
+### 캐릭터 사진 넣기
+
+정사각형 사진을 `assets/characters/`에 넣고 캐릭터에 `image: 'assets/characters/파일이름.jpg'`를 적으면
+공 안, 선택 화면, 승자 화면, 영상에 사진이 들어갑니다. 사진 테두리 색은 `color`입니다.
+
 ## 기본 제공 스킬
 
 | 스킬 | 발동 | 효과 |
@@ -63,6 +68,7 @@
 | `thorns` | 피격 시 | 피해 반사 |
 | `berserk` | 체력 낮을 때 | 광폭화 |
 | `bloodlust` | 처치 시 | 회복 + 강화 |
+| `brainAccel` | 계속 + 부딪힐 때 | 브레인 악셀: 점점 빨라지고, 몸으로 부딪히면 속도에 비례한 피해 |
 | `revive` | 사망 시 | 1회 부활 |
 
 모든 스킬은 숫자를 바꿀 수 있습니다. 예: `Skills.fireball({ damage: 20, cooldown: 2, burn: 5 })`
@@ -89,7 +95,9 @@
 },
 ```
 
-`trigger`: `cooldown`(기본), `start`, `onHit`, `onDamaged`, `lowHp`, `onKill`, `onDeath`
+`trigger`: `cooldown`(기본), `start`, `onHit`, `onDamaged`, `lowHp`, `onKill`, `onDeath`, `onCollide`(몸으로 부딪힘)
+
+매 순간 실행되는 `tick(self, game, dt)`과, 영상의 스킬 칸에 보여줄 내용을 정하는 `display(self)`도 쓸 수 있습니다 (`brainAccel` 참고).
 
 ## 게임 설정
 

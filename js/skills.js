@@ -22,6 +22,12 @@
  *   'lowHp'     : 체력이 hpBelow 이하가 되면 1번
  *   'onKill'    : 적을 처치했을 때                   ctx = {target}
  *   'onDeath'   : 죽을 때 1번 (cast 안에서 hp를 올리면 부활)
+ *   'onCollide' : 적과 몸으로 부딪혔을 때            ctx = {target, nx, ny}(nx,ny = 상대 쪽 방향)
+ *
+ * 추가로 쓸 수 있는 칸
+ *   tick(self, game, dt) {}    매 순간(1/120초마다) 실행. 점점 빨라지기 같은 효과
+ *   display(self) { return {text, ratio} }   영상의 스킬 칸에 보여줄 글자와 막대(0~1)
+ *   self.speedBonus            이동 속도 배율 (1 = 기본)
  *
  * cast 안에서 쓸 수 있는 game 기능
  *   game.nearestEnemy(self) / game.randomEnemy(self) / game.enemiesOf(self)
@@ -265,6 +271,36 @@
         name: p.name, color: '#7fe3ff', sound: 'shield', trigger: 'cooldown', cooldown: p.cooldown,
         desc: `${p.cooldown}초마다 ${p.duration}초간 피해 ${p.amount} 흡수`,
         cast(self, game) { game.addStatus(self, 'shield', { amount: p.amount, time: p.duration }); },
+      };
+    },
+
+    /* ----- 몸통 박치기 ----- */
+    brainAccel(o) {
+      const p = P({ name: '브레인 악셀', accel: 0.07, maxSpeed: 2.8, baseDamage: 4, damagePerSpeed: 8, cooldown: 0.35 }, o);
+      return {
+        name: p.name, color: '#5ef2ff', sound: 'cast', trigger: 'onCollide', cooldown: p.cooldown,
+        desc: `시간이 지날수록 점점 빨라짐 (최대 x${p.maxSpeed}). 적과 부딪히면 속도에 비례한 피해`,
+        // 매 순간 조금씩 가속
+        tick(self, game, dt) {
+          self.speedBonus = Math.min(p.maxSpeed, self.speedBonus + p.accel * dt);
+        },
+        // 부딪힌 순간 속도만큼 피해 + 밀쳐냄
+        cast(self, game, ctx) {
+          const t = ctx.target;
+          if (!t || !t.alive) return false;
+          const over = self.speedBonus - 1;
+          const dmg = p.baseDamage + p.damagePerSpeed * over;
+          const nx = ctx.nx || 0, ny = ctx.ny || 0;
+          t.kx += nx * (250 + 200 * over); t.ky += ny * (250 + 200 * over);
+          game.sound('hit', { dmg });
+          game.damage(t, dmg, self, { kind: 'weapon', color: '#5ef2ff' });
+          game.ring(t.x, t.y, t.r * 1.8, '#5ef2ff', 0.3);
+          game.shake(Math.min(8, 2 + over * 3));
+        },
+        // 영상의 스킬 칸에 현재 속도 표시
+        display(self) {
+          return { text: `x${self.speedBonus.toFixed(1)}`, ratio: (self.speedBonus - 1) / (p.maxSpeed - 1) };
+        },
       };
     },
 

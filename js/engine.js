@@ -51,6 +51,34 @@
     return '#' + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
   }
 
+  /* ---------- 캐릭터 사진 ---------- */
+  // 캐릭터의 image 경로 → 그릴 수 있는 그림. 페이지와 Web Worker 양쪽에서 씀
+  const images = new Map();
+  function loadImage(src) {
+    if (!src) return Promise.resolve(null);
+    if (images.has(src)) return Promise.resolve(images.get(src));
+    let p;
+    if (typeof Image !== 'undefined') {
+      p = new Promise((res) => {
+        const img = new Image();
+        img.onload = () => res(img);
+        img.onerror = () => res(null);
+        img.src = src;
+      });
+    } else {
+      p = fetch(src).then((r) => (r.ok ? r.blob() : null)).then((bl) => (bl ? createImageBitmap(bl) : null)).catch(() => null);
+    }
+    return p.then((img) => { if (img) images.set(src, img); return img; });
+  }
+  // base: 상대 경로의 기준 주소 (Web Worker는 페이지 주소를 넘겨받아야 함)
+  function loadImages(defs, base) {
+    return Promise.all((defs || []).map((d) => {
+      const src = d && d.image;
+      if (!src || images.has(src) || !base) return loadImage(src);
+      return loadImage(new URL(src, base).href).then((img) => { if (img) images.set(src, img); return img; });
+    }));
+  }
+
   const WEAPON_DEFAULTS = {
     type: 'sword', length: 46, width: 8, damage: 8, spin: 4,
     knockback: 260, reverseOnHit: true, color: '#d9dde8',
@@ -79,6 +107,7 @@
       this.spinDir = Math.random() < 0.5 ? 1 : -1;
       this.status = {};
       this.bonusDamage = 0;
+      this.speedBonus = 1; // 스킬로 올라가는 이동 속도 배율 (브레인 악셀 등)
       this.hitTimers = new Map();
       this.flash = 0;
       this.data = {}; // 커스텀 스킬이 자유롭게 쓰는 저장공간
@@ -99,7 +128,7 @@
     get speed() {
       const st = this.status;
       if (st.stun) return 0;
-      let s = this.baseSpeed;
+      let s = this.baseSpeed * this.speedBonus;
       if (st.haste) s *= st.haste.mult;
       if (st.slow) s *= st.slow.factor;
       return s;
@@ -451,9 +480,12 @@
       const balls = this.balls;
       for (const b of balls) {
         if (!b.alive) continue;
-        // 스킬 쿨다운
+        // 스킬 쿨다운 + 매 순간 동작하는 스킬(tick)
         for (const sk of b.skills) {
           if (sk.timer > 0) sk.timer -= dt;
+          if (sk.def.tick && !b.status.stun) {
+            try { sk.def.tick(b, this, dt, sk); } catch (e) { console.error('[스킬 오류]', sk.def.name, e); }
+          }
         }
         if (!b.status.stun && this.enemiesOf(b).length) this.fire(b, 'cooldown', {});
 
@@ -545,6 +577,9 @@
           if (a.team !== b.team) {
             this.dashHit(a, b, nx, ny);
             this.dashHit(b, a, -nx, -ny);
+            // 몸으로 부딪혔을 때 발동하는 스킬
+            if (a.alive && b.alive && !a.status.stun) this.fire(a, 'onCollide', { target: b, nx, ny });
+            if (a.alive && b.alive && !b.status.stun) this.fire(b, 'onCollide', { target: a, nx: -nx, ny: -ny });
           }
         }
       }
@@ -934,6 +969,18 @@
         ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 8, 0, TAU); ctx.fill();
         ctx.globalAlpha = 1;
       }
+      if (b.speedBonus > 1.15) {
+        // 빨라질수록 길어지는 잔상
+        const k = Math.min(1, (b.speedBonus - 1) / 1.6);
+        for (let i = 1; i <= 3; i++) {
+          ctx.globalAlpha = 0.22 * k * (1 - i / 4);
+          ctx.fillStyle = b.color;
+          ctx.beginPath();
+          ctx.arc(b.x - b.dx * b.r * 0.9 * i * (0.6 + k), b.y - b.dy * b.r * 0.9 * i * (0.6 + k), b.r * (1 - i * 0.12), 0, TAU);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      }
       if (st.haste) {
         ctx.globalAlpha = 0.3; ctx.strokeStyle = '#7dfcff'; ctx.lineWidth = 3;
         ctx.beginPath(); ctx.moveTo(b.x - b.dx * b.r * 2, b.y - b.dy * b.r * 2); ctx.lineTo(b.x - b.dx * b.r * 3.5, b.y - b.dy * b.r * 3.5); ctx.stroke();
@@ -958,11 +1005,26 @@
         ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.fill();
       }
 
-      // 아이콘/글자
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.font = `400 ${Math.round(b.r * 0.95)}px "Black Han Sans", "Noto Sans KR", sans-serif`;
-      ctx.fillStyle = 'rgba(255,255,255,0.95)';
-      ctx.fillText(b.icon, b.x, b.y + 1);
+      // 사진 또는 아이콘 글자
+      const img = b.def.image ? images.get(b.def.image) : null;
+      if (img) {
+        ctx.save();
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.r - 2, 0, TAU); ctx.clip();
+        ctx.drawImage(img, b.x - b.r + 2, b.y - b.r + 2, (b.r - 2) * 2, (b.r - 2) * 2);
+        if (b.flash > 0) {
+          ctx.globalAlpha = b.flash / 0.12 * 0.6; ctx.fillStyle = '#fff';
+          ctx.fillRect(b.x - b.r, b.y - b.r, b.r * 2, b.r * 2);
+        }
+        if (st.stun) { ctx.globalAlpha = 1; ctx.fillStyle = 'rgba(160,220,255,0.45)'; ctx.fillRect(b.x - b.r, b.y - b.r, b.r * 2, b.r * 2); }
+        ctx.restore();
+        ctx.lineWidth = 3; ctx.strokeStyle = b.color;
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.r - 1, 0, TAU); ctx.stroke();
+      } else {
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.font = `400 ${Math.round(b.r * 0.95)}px "Black Han Sans", "Noto Sans KR", sans-serif`;
+        ctx.fillStyle = 'rgba(255,255,255,0.95)';
+        ctx.fillText(b.icon, b.x, b.y + 1);
+      }
 
       // 보호막/무적
       if (st.shield) {
@@ -1003,5 +1065,5 @@
     }
   }
 
-  window.BallBattle = { Game, Ball, util: { clamp, rand, shade, TAU } };
+  window.BallBattle = { Game, Ball, images, loadImage, loadImages, util: { clamp, rand, shade, TAU } };
 })();

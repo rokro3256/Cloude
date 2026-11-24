@@ -59,10 +59,15 @@
   }
 
   /* ---------- 스킬 상태 ---------- */
-  function skillState(g, sk) {
+  function skillState(g, sk, b) {
     const d = sk.def;
     const cd = d.cooldown || 0;
     const flash = sk.lastCast != null && g.time - sk.lastCast < 0.6;
+    if (d.display) {
+      // 스킬이 직접 보여줄 내용을 정함 (예: 브레인 악셀의 현재 속도)
+      const v = d.display(b) || {};
+      return { text: String(v.text != null ? v.text : ''), ratio: Math.max(0, Math.min(1, v.ratio || 0)), ready: true, flash };
+    }
     if (sk.trigger === 'cooldown' || cd > 0) {
       if (sk.timer > 0 && cd > 0) {
         return { text: sk.timer.toFixed(1) + 's', ratio: 1 - sk.timer / cd, ready: false, flash };
@@ -211,7 +216,7 @@
       const areaH = y + cardH - pad * 0.6 - areaTop;
       const lh = Math.min(72, areaH / skills.length);
       skills.forEach((sk, k) => {
-        const st = skillState(g, sk);
+        const st = skillState(g, sk, b);
         const ly = areaTop + k * lh;
         const col = sk.def.color || '#ffd23f';
         if (lh >= 26) {
@@ -307,8 +312,16 @@
       grd.addColorStop(1, BallBattle.util.shade(w.color, -0.25));
       ctx.fillStyle = grd;
       ctx.beginPath(); ctx.arc(W / 2, cy - 40, r, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.font = `400 ${Math.round(r * 0.95)}px ${DISPLAY}`;
-      ctx.fillText(w.icon, W / 2, cy - 36);
+      const img = w.def.image ? BallBattle.images.get(w.def.image) : null;
+      if (img) {
+        ctx.save();
+        ctx.beginPath(); ctx.arc(W / 2, cy - 40, r - 5, 0, Math.PI * 2); ctx.clip();
+        ctx.drawImage(img, W / 2 - r + 5, cy - 40 - r + 5, (r - 5) * 2, (r - 5) * 2);
+        ctx.restore();
+      } else {
+        ctx.fillStyle = '#fff'; ctx.font = `400 ${Math.round(r * 0.95)}px ${DISPLAY}`;
+        ctx.fillText(w.icon, W / 2, cy - 36);
+      }
     }
     ctx.fillStyle = '#eef0f7'; ctx.font = `400 96px ${DISPLAY}`;
     const name = w ? (winners.length > 1 ? winners.map((x) => x.name).join(', ') : w.name) : '무승부';
