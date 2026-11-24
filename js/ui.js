@@ -126,10 +126,32 @@
     game.balls.forEach((b) => {
       const el = document.createElement('div');
       el.className = 'fighter';
-      el.innerHTML = `<span class="dot" style="background:${esc(b.color)}"></span><span class="nm">${esc(b.name)}</span><span class="hp"></span><span class="bar"><i></i></span>`;
+      const avatar = b.def.image
+        ? `<span class="dot photo" style="--ring:${esc(b.color)};background-image:url('${esc(b.def.image)}')"></span>`
+        : `<span class="dot" style="background:${esc(b.color)}"></span>`;
+      const skills = b.skills.map((sk) => `<span class="sk"><span class="sn">${esc(sk.def.name || '스킬')}</span><span class="st"></span><span class="sb"><i style="background:${esc(sk.def.color || '#ffd23f')}"></i></span></span>`).join('');
+      el.innerHTML = `${avatar}<span class="nm">${esc(b.name)}</span><span class="hp"></span><span class="bar"><i></i></span>${skills ? `<span class="skills">${skills}</span>` : ''}`;
       b._el = el;
+      b._sk = Array.from(el.querySelectorAll('.sk')).map((row) => ({ row, st: row.querySelector('.st'), bar: row.querySelector('.sb i') }));
       r.appendChild(el);
     });
+  }
+
+  // Text + fill ratio for one skill row in the roster panel
+  function skillStatus(b, sk) {
+    const d = sk.def;
+    if (d.display) {
+      const v = d.display(b, sk) || {};
+      return { text: String(v.text != null ? v.text : ''), ratio: Math.max(0, Math.min(1, v.ratio || 0)), ready: !(sk.timer > 0) };
+    }
+    if ((sk.trigger === 'cooldown' || d.cooldown) && d.cooldown) {
+      if (sk.timer > 0) return { text: sk.timer.toFixed(1) + 's', ratio: 1 - sk.timer / d.cooldown, ready: false };
+      return { text: sk.trigger === 'cooldown' ? '준비' : '패시브', ratio: 1, ready: true };
+    }
+    if (sk.trigger === 'lowHp' || sk.trigger === 'onDeath' || sk.trigger === 'start') {
+      return sk.used ? { text: '사용함', ratio: 0, ready: false } : { text: '대기', ratio: 1, ready: true };
+    }
+    return { text: '패시브', ratio: 1, ready: true };
   }
 
   function tickHud() {
@@ -143,6 +165,15 @@
         bar.style.width = ratio * 100 + '%';
         bar.style.background = ratio > 0.5 ? '#5ee07a' : ratio > 0.25 ? '#ffc23d' : '#ff5252';
         el.classList.toggle('dead', !b.alive);
+        b.skills.forEach((sk, i) => {
+          const ui = b._sk && b._sk[i];
+          if (!ui) return;
+          const s = skillStatus(b, sk);
+          ui.st.textContent = s.text;
+          ui.row.classList.toggle('ready', s.ready);
+          ui.row.classList.toggle('flash', sk.lastCast != null && game.time - sk.lastCast < 0.5);
+          ui.bar.style.width = (s.ratio * 100).toFixed(1) + '%';
+        });
       }
       const c = $('clock');
       c.textContent = game.time.toFixed(1);

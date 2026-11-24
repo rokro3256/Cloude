@@ -36,7 +36,7 @@ window.GAME_CONFIG = {
   seek: 0,               // 가까운 적 쪽으로 방향을 트는 정도 (0 = 적을 쫓지 않음)
   wallSpread: 140,       // 벽에 튕길 때 무작위 방향 범위(도). 0이면 거울처럼 반사
   ballScale: 1.2,        // 모든 공 크기 배율
-  showCooldowns: true,   // 체력바 밑에 스킬 쿨타임 표시
+  showCooldowns: false,  // true면 경기장 안 공 위에도 스킬 쿨타임 표시
 };
 
 window.CHARACTERS = [

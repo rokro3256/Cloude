@@ -155,19 +155,30 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 6px;
-  max-height: 30vh;
+  max-height: 36vh;
   overflow-y: auto;
 }
 .fighter {
-  display: grid; grid-template-columns: 14px 1fr auto; gap: 2px 8px; align-items: center;
+  display: grid; grid-template-columns: 18px 1fr auto; gap: 2px 8px; align-items: center;
   padding: 6px 8px; border-radius: 8px; background: var(--panel); min-width: 0;
 }
 .fighter.dead { opacity: .35; }
 .fighter .dot { width: 12px; height: 12px; border-radius: 50%; }
+.fighter { align-items: center; }
 .fighter .nm { font-weight: 700; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fighter .hp { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .fighter .bar { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
 .fighter .bar i { display: block; height: 100%; background: #5ee07a; transition: width .15s; }
+.fighter .dot.photo { width: 18px; height: 18px; background-size: cover; background-position: center; box-shadow: 0 0 0 2px var(--ring); }
+.fighter .skills { grid-column: 1 / -1; display: grid; gap: 4px; margin-top: 4px; }
+.fighter .sk { display: grid; grid-template-columns: 1fr auto; gap: 1px 6px; align-items: center; font-size: 11px; min-width: 0; }
+.fighter .sn { color: #c6cbe0; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fighter .st { color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
+.fighter .sk.ready .st { color: #6dff9c; }
+.fighter .sk.flash .sn { color: var(--accent); }
+.fighter .sb { grid-column: 1 / -1; height: 3px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.fighter .sb i { display: block; height: 100%; width: 0; opacity: .55; }
+.fighter .sk.ready .sb i { opacity: 1; }
 
 /* 가로 화면(태블릿/PC): 명단을 오른쪽으로 */
 @media (min-aspect-ratio: 4/3) and (min-width: 700px) {

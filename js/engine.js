@@ -152,7 +152,7 @@
   class Game {
     constructor(canvas, defs, opts = {}) {
       this.cfg = Object.assign({
-        arenaSize: 600, hitCooldown: 0.4, suddenDeathTime: 60, endDelay: 1.4, seek: 0, wallSpread: 140, ballScale: 1.2, showCooldowns: true,
+        arenaSize: 600, hitCooldown: 0.4, suddenDeathTime: 60, endDelay: 1.4, seek: 0, wallSpread: 140, ballScale: 1.2, showCooldowns: false,
       }, window.GAME_CONFIG || {}, opts.config || {});
       this.A = this.cfg.arenaSize;
       this.canvas = canvas;
